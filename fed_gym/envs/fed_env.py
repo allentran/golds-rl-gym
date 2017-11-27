@@ -10,9 +10,12 @@ class FedEnv(gym.Env):
     def __init__(self, starting_balance=100., base_rate=0.05, n_assets=2):
         super(FedEnv, self).__init__()
 
+        self.MIN_CASH = 10.
+
         self.starting_balance = starting_balance
         self.r = base_rate
         self.n_assets = n_assets
+        self.cov_mat = self._get_cov_mat()
 
         self.cash_balance = None
         self.price = None
@@ -29,11 +32,17 @@ class FedEnv(gym.Env):
             ]
         )
 
+    def _get_cov_mat(self):
+        std_e = 1e-3
+        cov = np.zeros((self.n_assets, self.n_assets))
+        np.fill_diagonal(cov, std_e)
+
+        return cov
+
     def _price_transition(self, p):
         rho = 0.9
-        std_e = 0.01
         self.e = rho * self.e + np.random.multivariate_normal(
-            np.zeros((self.n_assets, )), std_e * np.identity(self.n_assets)
+            np.zeros((self.n_assets, )), self.cov_mat
         )
         return p * np.exp(self.e)
 
@@ -53,7 +62,7 @@ class FedEnv(gym.Env):
         return (
             [self.cash_balance, self.quantity, self.price],
             reward,
-            self.cash_balance <= 0,
+            self.cash_balance <= self.MIN_CASH,
             {}
         )
 
