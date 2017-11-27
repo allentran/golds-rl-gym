@@ -7,11 +7,12 @@ from gym.utils import seeding
 
 
 class FedEnv(gym.Env):
-    def __init__(self, starting_balance=100., base_rate=0.05):
+    def __init__(self, starting_balance=100., base_rate=0.05, n_assets=2):
         super(FedEnv, self).__init__()
 
         self.starting_balance = starting_balance
         self.r = base_rate
+        self.n_assets = n_assets
 
         self.cash_balance = None
         self.price = None
@@ -19,32 +20,34 @@ class FedEnv(gym.Env):
         self.e = None
 
         # fraction to sell = negative, fraction of funds used to purchase = positive
-        self.action_space = spaces.Box(-1., 1.)
+        self.action_space = spaces.Box(-1., 1., shape=(self.n_assets, ))
         self.observation_space = spaces.Tuple(
             [
-                spaces.Box(0., 10e5), # funds
-                spaces.Box(0., 10e5), # quantity
-                spaces.Box(0., 1.) # price
+                spaces.Box(0., 10e5, shape=(1, )), # funds
+                spaces.Box(0., 10e5, shape=(2, )), # quantity
+                spaces.Box(0., 1., shape=(2, )) # price
             ]
         )
 
     def _price_transition(self, p):
         rho = 0.9
-        std_e = 0.1
-        self.e = rho * self.e + np.random.normal(std_e)
+        std_e = 0.01
+        self.e = rho * self.e + np.random.multivariate_normal(
+            np.zeros((self.n_assets, )), std_e * np.identity(self.n_assets)
+        )
         return p * np.exp(self.e)
 
     def _step(self, action):
         assert self.action_space.contains(action)
-        if action > 0:
-            q_add = action * self.cash_balance / self.price
-        else:
-            q_add = - action * self.quantity
+        buy_mask = action > 0
+        q_add = np.zeros_like(action)
+        q_add[buy_mask] = (action * self.cash_balance / self.price)[buy_mask]
+        q_add[~buy_mask] = (action * self.quantity)[~buy_mask]
 
         reward = self.cash_balance * self.r
 
         self.quantity += q_add
-        self.cash_balance += -q_add * self.price
+        self.cash_balance += -(q_add * self.price).sum()
         self.price = self._price_transition(self.price)
 
         return (
@@ -56,9 +59,11 @@ class FedEnv(gym.Env):
 
     def _reset(self):
         self.cash_balance = self.starting_balance
-        self.price = np.random.uniform(5, 10)
-        self.quantity = 0
-        self.e = 0.
+        self.price = np.random.uniform(5, 10, size=(self.n_assets, ))
+        self.quantity = np.zeros((self.n_assets, ))
+        self.e = np.zeros_like(self.quantity)
+
+        return [self.cash_balance, self.quantity, self.price]
 
     def _seed(self, seed=None):
         if seed:
