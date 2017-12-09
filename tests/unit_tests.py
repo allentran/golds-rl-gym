@@ -17,12 +17,12 @@ class TradingEnvTests(unittest.TestCase):
         self.env.reset()
 
         for _ in xrange(100):
-            (cash, quantity, price), reward, done, _ = self.env.step(np.array([0.1, 0.1]))
+            (cash, quantity, price_history), reward, done, _ = self.env.step(np.array([0.1, 0.1]))
 
         self.assertTrue(done)
         self.assertLessEqual(cash, self.env.MIN_CASH)
         np.testing.assert_array_less(0, quantity)
-        np.testing.assert_array_less(0, price)
+        np.testing.assert_array_less(0, price_history)
 
     def buysell_test(self):
         self.env.reset()

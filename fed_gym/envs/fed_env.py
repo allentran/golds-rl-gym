@@ -18,7 +18,7 @@ class TradeEnv(gym.Env):
         self.cov_mat = self._get_cov_mat()
 
         self.cash_balance = None
-        self.price = None
+        self.prices = None
         self.quantity = None
         self.e = None
 
@@ -50,17 +50,17 @@ class TradeEnv(gym.Env):
         assert self.action_space.contains(action)
         buy_mask = action > 0
         q_add = np.zeros_like(action)
-        q_add[buy_mask] = (action * self.cash_balance / self.price)[buy_mask]
+        q_add[buy_mask] = (action * self.cash_balance / self.prices[:, -1])[buy_mask]
         q_add[~buy_mask] = (action * self.quantity)[~buy_mask]
 
         reward = self.cash_balance * self.r
 
         self.quantity += q_add
-        self.cash_balance += -(q_add * self.price).sum()
-        self.price = self._price_transition(self.price)
+        self.cash_balance += -(q_add * self.prices[:, -1]).sum()
+        self.prices = np.hstack([self.prices, self._price_transition(self.prices[:, -1][:, None])])
 
         return (
-            [self.cash_balance, self.quantity, self.price],
+            [self.cash_balance, self.quantity, self.prices],
             reward,
             self.cash_balance <= self.MIN_CASH,
             {}
@@ -68,11 +68,11 @@ class TradeEnv(gym.Env):
 
     def _reset(self):
         self.cash_balance = self.starting_balance
-        self.price = np.random.uniform(5, 10, size=(self.n_assets, ))
+        self.prices = np.random.uniform(5, 10, size=(self.n_assets, 1))
         self.quantity = np.zeros((self.n_assets, ))
         self.e = np.zeros_like(self.quantity)
 
-        return [self.cash_balance, self.quantity, self.price]
+        return [self.cash_balance, self.quantity, self.prices]
 
     def _seed(self, seed=None):
         if seed:
