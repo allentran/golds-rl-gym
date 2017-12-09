@@ -6,6 +6,44 @@ from gym import error, spaces, utils
 from gym.utils import seeding
 
 
+class SolowEnv(gym.Env):
+    """
+    Classic Solow model (no growth or pop growth) with log consumption utility
+    """
+    def __init__(self, delta=0.02, sigma=0.02):
+        super(SolowEnv, self).__init__()
+
+        self.delta = delta
+        self.sigma = sigma
+        self.rho = 0.95
+        self.alpha = 0.33
+
+        self.z = None
+        self.k = None
+
+        self.action_space = spaces.Box(0, 1., shape=1)
+        self.observation_space = spaces.Box(0, np.inf, shape=1)
+
+    def _k_transition(self, k_t, y_t, s):
+        return (1 - self.delta) * k_t + s * y_t
+
+    def _step(self, s):
+        self.z = self.rho * self.z + np.random.normal(0, self.sigma)
+        y_t = np.exp(self.z) * (self.k[-1] ** self.alpha)
+        k_next = self._k_transition(self.k[-1], y_t, s)
+        self.k = np.concatenate((self.k, np.array([k_next])))
+        return (
+            self.k,
+            np.log((1 - s) * y_t),
+            False,
+            {}
+        )
+
+    def _reset(self):
+        self.k = np.array([1])
+        self.z = 0
+
+
 class TradeEnv(gym.Env):
     def __init__(self, starting_balance=100., base_rate=0.05, n_assets=2):
         super(TradeEnv, self).__init__()
