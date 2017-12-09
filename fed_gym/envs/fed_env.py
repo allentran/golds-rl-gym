@@ -6,9 +6,9 @@ from gym import error, spaces, utils
 from gym.utils import seeding
 
 
-class FedEnv(gym.Env):
+class TradeEnv(gym.Env):
     def __init__(self, starting_balance=100., base_rate=0.05, n_assets=2):
-        super(FedEnv, self).__init__()
+        super(TradeEnv, self).__init__()
 
         self.MIN_CASH = 10.
 
@@ -79,7 +79,7 @@ class FedEnv(gym.Env):
             np.random.seed(seed)
 
     def _render(self, mode='human', close=False):
-        super(FedEnv, self)._render(mode, close)
+        super(TradeEnv, self)._render(mode, close)
 
 
 
