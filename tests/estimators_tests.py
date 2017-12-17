@@ -14,9 +14,6 @@ import_path = os.path.abspath(os.path.join(current_path, "../.."))
 if import_path not in sys.path:
     sys.path.append(import_path)
 
-def make_env():
-    return gym.envs.make("Breakout-v0")
-
 
 class PolicyEstimatorTest(tf.test.TestCase):
 
@@ -37,7 +34,7 @@ class PolicyEstimatorTest(tf.test.TestCase):
 
     def gaussian_predict_test(self):
         estimator = GaussianPolicyEstimator(
-            self.num_actions, input_shape=[None, self.input_size], temporal_input_shape=[None, None, self.temporal_size],
+            self.num_actions, static_state_shape=[None, self.input_size], temporal_state_shape=[None, None, self.temporal_size],
             shared_layer=lambda x: rnn_graph_lstm(x, 32, 2, True)
         )
 
@@ -50,7 +47,7 @@ class PolicyEstimatorTest(tf.test.TestCase):
             feed_dict = {
                 estimator.states: self.states,
                 estimator.history: self.temporal_states,
-                estimator.advantage: self.advantage,
+                estimator.advantages: self.advantage,
                 estimator.actions: self.actions
             }
             loss = sess.run(estimator.loss, feed_dict)
@@ -86,7 +83,7 @@ class ValueEstimatorTest(tf.test.TestCase):
 
     def predict_test(self):
         estimator = ValueEstimator(
-            self.num_actions, input_shape=[None, self.input_size], temporal_input_shape=[None, None, self.temporal_size],
+            static_state_shape=[None, self.input_size], temporal_state_shape=[None, None, self.temporal_size],
             shared_layer=lambda x: rnn_graph_lstm(x, 32, 2, True)
         )
 

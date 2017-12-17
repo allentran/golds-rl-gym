@@ -49,13 +49,13 @@ class GaussianPolicyEstimator():
         train ops would set this to false.
     """
 
-    def __init__(self, num_actions, input_shape, temporal_input_shape, shared_layer, static_hidden_size=32, reuse=False, trainable=True):
+    def __init__(self, num_actions, static_state_shape, temporal_state_shape, shared_layer, static_hidden_size=32, reuse=False, trainable=True):
 
         # assert input_shape[0] is None
 
-        self.states = tf.placeholder(shape=input_shape, dtype=tf.float32, name="X")
-        self.history = tf.placeholder(shape=temporal_input_shape, dtype=tf.float32, name="X_t")
-        self.advantage = tf.placeholder(shape=(None, ), dtype=tf.float32, name='advantage')
+        self.states = tf.placeholder(shape=static_state_shape, dtype=tf.float32, name="X")
+        self.history = tf.placeholder(shape=temporal_state_shape, dtype=tf.float32, name="X_t")
+        self.advantages = tf.placeholder(shape=(None,), dtype=tf.float32, name='advantages')
         self.actions = tf.placeholder(shape=(None, num_actions), dtype=tf.float32, name="actions")
 
         X = tf.to_float(self.states)
@@ -83,7 +83,7 @@ class GaussianPolicyEstimator():
             self.entropy_mean = tf.reduce_mean(self.entropy, name="entropy_mean")
 
             nll = tf.log(sigma) + tf.square(self.actions - mu) / (2 * tf.square(sigma))
-            loss = nll * self.advantage[:, None]
+            loss = nll * self.advantages[:, None]
             self.loss = tf.reduce_mean(tf.reduce_sum(loss, name="loss"))
 
             tf.summary.scalar(self.loss.op.name, self.loss)
@@ -101,10 +101,10 @@ class GaussianPolicyEstimator():
                 )
 
         # Merge summaries from this network and the shared network (but not the value net)
-        # var_scope_name = tf.get_variable_scope().name
-        # summary_ops = tf.get_collection(tf.GraphKeys.SUMMARIES)
-        # sumaries = [s for s in summary_ops if var_scope_name in s.name]
-        # self.summaries = tf.summary.merge(sumaries)
+        var_scope_name = tf.get_variable_scope().name
+        summary_ops = tf.get_collection(tf.GraphKeys.SUMMARIES)
+        sumaries = [s for s in summary_ops if var_scope_name in s.name]
+        self.summaries = tf.summary.merge(sumaries)
 
 
 class ValueEstimator():
@@ -122,12 +122,13 @@ class ValueEstimator():
         train ops would set this to false.
     """
 
-    def __init__(self, num_actions, input_shape, temporal_input_shape, shared_layer, static_hidden_size=32, reuse=False, trainable=True):
+    def __init__(self, static_state_shape, temporal_state_shape, shared_layer, static_hidden_size=32, reuse=False, trainable=True):
 
-        # assert input_shape[0] is None
+        self.static_state_shape = static_state_shape
+        self.temporal_state_shape = temporal_state_shape
 
-        self.states = tf.placeholder(shape=input_shape, dtype=tf.float32, name="X")
-        self.history = tf.placeholder(shape=temporal_input_shape, dtype=tf.float32, name="X_t")
+        self.states = tf.placeholder(shape=static_state_shape, dtype=tf.float32, name="X")
+        self.history = tf.placeholder(shape=temporal_state_shape, dtype=tf.float32, name="X_t")
         self.targets = tf.placeholder(shape=(None, ), dtype=tf.float32, name="targets")
 
         X = tf.to_float(self.states)
@@ -156,7 +157,7 @@ class ValueEstimator():
 
             # Summaries
             prefix = tf.get_variable_scope().name
-            tf.summary.scalar(self.loss.name, self.loss)
+            tf.summary.scalar(self.loss.op.name, self.loss)
             tf.summary.scalar("{}/max_value".format(prefix), tf.reduce_max(self.logits))
             tf.summary.scalar("{}/min_value".format(prefix), tf.reduce_min(self.logits))
             tf.summary.scalar("{}/mean_value".format(prefix), tf.reduce_mean(self.logits))
