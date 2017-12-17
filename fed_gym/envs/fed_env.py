@@ -18,30 +18,38 @@ class SolowEnv(gym.Env):
         self.rho = 0.95
         self.alpha = 0.33
 
-        self.z = None
+        self.z_history = None
         self.k = None
 
         self.action_space = spaces.Box(0, 1., shape=1)
-        self.observation_space = spaces.Box(0, np.inf, shape=1)
 
     def _k_transition(self, k_t, y_t, s):
         return (1 - self.delta) * k_t + s * y_t
 
     def _step(self, s):
-        self.z = self.rho * self.z + np.random.normal(0, self.sigma)
-        y_t = np.exp(self.z) * (self.k[-1] ** self.alpha)
+
+        y_t = np.exp(self.z[-1]) * (self.k[-1] ** self.alpha)
+
+        z_next = self.rho * self.z[-1] + np.random.normal(0, self.sigma)
         k_next = self._k_transition(self.k[-1], y_t, s)
-        self.k = np.concatenate((self.k, np.array([k_next])))
+
+        self.z = np.concatenate((self.z.flatten(), z_next.flatten()))
+        self.k = np.concatenate((self.k.flatten(), k_next.flatten()))
+
+        state = np.hstack([self.k[:, None], self.z[:, None]])
+
         return (
-            self.k,
+            state,
             np.log((1 - s) * y_t),
             False,
             {}
         )
 
     def _reset(self):
-        self.k = np.array([1])
-        self.z = 0
+        self.k = np.array([1]).reshape((1, 1))
+        self.z = np.array([0]).reshape((1, 1))
+
+        return np.hstack([self.k[None, :], self.z[None, :]])
 
 
 class TradeEnv(gym.Env):
