@@ -47,19 +47,22 @@ class SolowEnvTests(unittest.TestCase):
 
         for _ in xrange(10000):
             state, consumption, done, _ = self.static_env.step(savings)
-            capital = state[:, 0]
+            capital = state[0]
 
         self.assertFalse(done)
-        np.testing.assert_almost_equal(capital[-1], k_ss)
+        np.testing.assert_almost_equal(capital, k_ss)
 
     def stochastic_state_test(self):
         self.stochastic_env.reset()
         savings = 0.1
         k_ss = (savings / self.stochastic_env.delta) ** (1 / (1 - self.stochastic_env.alpha))
 
+        capital_states = []
+
         for _ in xrange(10000):
             state, consumption, done, _ = self.stochastic_env.step(savings)
-            capital = state[:, 0]
+            capital = state[0]
+            capital_states.append(capital)
 
         self.assertFalse(done)
-        np.testing.assert_almost_equal(np.mean(capital), k_ss, decimal=1)
+        np.testing.assert_almost_equal(np.mean(capital_states), k_ss, decimal=1)

@@ -9,6 +9,7 @@ from gym.utils import seeding
 class SolowEnv(gym.Env):
     """
     Classic Solow model (no growth or pop growth) with log consumption utility
+    States are histories of capital and tech innovation/shock
     """
     def __init__(self, delta=0.02, sigma=0.02):
         super(SolowEnv, self).__init__()
@@ -18,7 +19,7 @@ class SolowEnv(gym.Env):
         self.rho = 0.95
         self.alpha = 0.33
 
-        self.z_history = None
+        self.z = None
         self.k = None
 
         self.action_space = spaces.Box(0, 1., shape=1)
@@ -28,15 +29,15 @@ class SolowEnv(gym.Env):
 
     def _step(self, s):
 
-        y_t = np.exp(self.z[-1]) * (self.k[-1] ** self.alpha)
+        y_t = np.exp(self.z) * (self.k ** self.alpha)
 
-        z_next = self.rho * self.z[-1] + np.random.normal(0, self.sigma)
-        k_next = self._k_transition(self.k[-1], y_t, s)
+        z_next = self.rho * self.z + np.random.normal(0, self.sigma)
+        k_next = self._k_transition(self.k, y_t, s)
 
-        self.z = np.concatenate((self.z.flatten(), z_next.flatten()))
-        self.k = np.concatenate((self.k.flatten(), k_next.flatten()))
+        self.z = z_next
+        self.k = k_next
 
-        state = np.hstack([self.k[:, None], self.z[:, None]])
+        state = np.array([self.k, self.z]).flatten()
 
         return (
             state,
@@ -46,10 +47,10 @@ class SolowEnv(gym.Env):
         )
 
     def _reset(self):
-        self.k = np.array([1]).reshape((1, 1))
-        self.z = np.array([0]).reshape((1, 1))
+        self.k = 1.
+        self.z = 0.
 
-        return np.hstack([self.k[None, :], self.z[None, :]])
+        return np.array([self.k, self.z]).flatten()
 
 
 class TradeEnv(gym.Env):
