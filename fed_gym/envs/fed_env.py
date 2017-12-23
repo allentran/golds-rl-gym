@@ -30,7 +30,6 @@ class SolowEnv(gym.Env):
     def _step(self, s):
 
         y_t = np.exp(self.z) * (self.k ** self.alpha)
-
         z_next = self.rho * self.z + np.random.normal(0, self.sigma)
         k_next = self._k_transition(self.k, y_t, s)
 

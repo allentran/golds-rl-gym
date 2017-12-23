@@ -1,18 +1,7 @@
-import unittest
-import gym
-import sys
-import os
 import numpy as np
 import tensorflow as tf
 
 from fed_gym.agents.a3c.estimators import GaussianPolicyEstimator, ValueEstimator, rnn_graph_lstm
-
-from inspect import getsourcefile
-current_path = os.path.dirname(os.path.abspath(getsourcefile(lambda:0)))
-import_path = os.path.abspath(os.path.join(current_path, "../.."))
-
-if import_path not in sys.path:
-    sys.path.append(import_path)
 
 
 class PolicyEstimatorTest(tf.test.TestCase):
@@ -34,7 +23,7 @@ class PolicyEstimatorTest(tf.test.TestCase):
 
     def gaussian_predict_test(self):
         estimator = GaussianPolicyEstimator(
-            self.num_actions, static_state_shape=[None, self.input_size], temporal_state_shape=[None, None, self.temporal_size],
+            self.num_actions, static_size=self.input_size, temporal_size=self.temporal_size,
             shared_layer=lambda x: rnn_graph_lstm(x, 32, 2, True)
         )
 
@@ -83,8 +72,8 @@ class ValueEstimatorTest(tf.test.TestCase):
 
     def predict_test(self):
         estimator = ValueEstimator(
-            static_state_shape=[None, self.input_size], temporal_state_shape=[None, None, self.temporal_size],
-            shared_layer=lambda x: rnn_graph_lstm(x, 32, 2, True)
+            static_size=self.input_size, temporal_size=self.temporal_size,
+            shared_layer=lambda x: rnn_graph_lstm(x, 32, 2, True),
         )
 
         grads = [g for g, _ in estimator.grads_and_vars]

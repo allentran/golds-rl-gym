@@ -4,6 +4,30 @@ from tensorflow.contrib import keras
 import tensorflow as tf
 
 
+def build_shared_network(X, add_summaries=False):
+    """
+    Builds a 3-layer network conv -> conv -> fc as described
+    in the A3C paper. This network is shared by both the policy and value net.
+
+    Args:
+      X: Inputs
+      add_summaries: If true, add layer summaries to Tensorboard.
+
+    Returns:
+      Final layer activations.
+    """
+
+    # Fully connected layer
+    fc1 = tf.contrib.layers.fully_connected(
+        inputs=X,
+        num_outputs=256,
+        scope="fc_shared")
+
+    if add_summaries:
+        tf.contrib.layers.summarize_activation(fc1)
+
+    return fc1
+
 def dense_layers(X, add_summaries=False):
   fc1 = tf.contrib.layers.fully_connected(
     inputs=X,
@@ -49,14 +73,16 @@ class GaussianPolicyEstimator():
         train ops would set this to false.
     """
 
-    def __init__(self, num_actions, static_state_shape, temporal_state_shape, shared_layer, static_hidden_size=32, reuse=False, trainable=True):
+    def __init__(self, num_actions, static_size, temporal_size, shared_layer, static_hidden_size=32, reuse=False, trainable=True):
 
-        # assert input_shape[0] is None
-
-        self.states = tf.placeholder(shape=static_state_shape, dtype=tf.float32, name="X")
-        self.history = tf.placeholder(shape=temporal_state_shape, dtype=tf.float32, name="X_t")
+        self.states = tf.placeholder(shape=(None, static_size), dtype=tf.float32, name="X")
+        self.history = tf.placeholder(shape=(None, None, temporal_size), dtype=tf.float32, name="X_t")
         self.advantages = tf.placeholder(shape=(None,), dtype=tf.float32, name='advantages')
         self.actions = tf.placeholder(shape=(None, num_actions), dtype=tf.float32, name="actions")
+
+        self.num_actions = num_actions
+        self.static_size = static_size
+        self.temporal_size = temporal_size
 
         X = tf.to_float(self.states)
         X_t = tf.to_float(self.history)
@@ -72,7 +98,7 @@ class GaussianPolicyEstimator():
             normal_params = tf.contrib.layers.fully_connected(dense_output, num_actions * 2, activation_fn=None)
             normal_params = tf.reshape(normal_params, [-1, num_actions, 2])
             mu = normal_params[:, :, 0]
-            sigma = tf.nn.softplus(normal_params[:, :, 1])
+            sigma = tf.nn.softplus(normal_params[:, :, 1] + keras.backend.epsilon())
 
             self.predictions = {
                 "mu": mu,
@@ -92,7 +118,6 @@ class GaussianPolicyEstimator():
 
             if trainable:
                 self.optimizer = tf.train.AdamOptimizer(1e-4)
-                # self.optimizer = tf.train.RMSPropOptimizer(0.00025, 0.99, 0.0, 1e-6)
                 self.grads_and_vars = self.optimizer.compute_gradients(self.loss)
                 self.grads_and_vars = [[grad, var] for grad, var in self.grads_and_vars if grad is not None]
                 self.train_op = self.optimizer.apply_gradients(
@@ -122,13 +147,13 @@ class ValueEstimator():
         train ops would set this to false.
     """
 
-    def __init__(self, static_state_shape, temporal_state_shape, shared_layer, static_hidden_size=32, reuse=False, trainable=True):
+    def __init__(self, static_size, temporal_size, shared_layer, static_hidden_size=32, reuse=False, trainable=True):
 
-        self.static_state_shape = static_state_shape
-        self.temporal_state_shape = temporal_state_shape
+        self.static_size = static_size
+        self.temporal_size = temporal_size
 
-        self.states = tf.placeholder(shape=static_state_shape, dtype=tf.float32, name="X")
-        self.history = tf.placeholder(shape=temporal_state_shape, dtype=tf.float32, name="X_t")
+        self.states = tf.placeholder(shape=(None, static_size), dtype=tf.float32, name="X")
+        self.history = tf.placeholder(shape=(None, None, temporal_size), dtype=tf.float32, name="X_t")
         self.targets = tf.placeholder(shape=(None, ), dtype=tf.float32, name="targets")
 
         X = tf.to_float(self.states)
@@ -169,7 +194,6 @@ class ValueEstimator():
 
             if trainable:
                 self.optimizer = tf.train.AdamOptimizer(1e-4)
-                # self.optimizer = tf.train.RMSPropOptimizer(0.00025, 0.99, 0.0, 1e-6)
                 self.grads_and_vars = self.optimizer.compute_gradients(self.loss)
                 self.grads_and_vars = [[grad, var] for grad, var in self.grads_and_vars if grad is not None]
                 self.train_op = self.optimizer.apply_gradients(
