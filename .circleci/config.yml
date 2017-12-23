@@ -21,6 +21,12 @@ jobs:
           - v1-dependencies-
 
       - run:
+          name: install virtual env
+          command: |
+            pip install virtualenv
+            virtualenv venv
+
+      - run:
           name: install dependencies
           command: |
             pip install -r requirements.txt
