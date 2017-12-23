@@ -23,8 +23,6 @@ jobs:
       - run:
           name: install dependencies
           command: |
-            python -m venv venv
-            . venv/bin/activate
             pip install -r requirements.txt
 
       - save_cache:
@@ -36,7 +34,6 @@ jobs:
       - run:
           name: run tests
           command: |
-            . venv/bin/activate
             nosetests --logging-level=WARN
 
       - store_artifacts:
