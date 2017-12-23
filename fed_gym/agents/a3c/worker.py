@@ -5,7 +5,10 @@ import tensorflow as tf
 
 from estimators import ValueEstimator, GaussianPolicyEstimator
 
-Transition = collections.namedtuple("Transition", ["state", "action", "reward", "next_state", "done"])
+Transition = collections.namedtuple(
+    "Transition",
+    ["state", "action", "reward", "next_state", "done"]
+)
 
 
 def make_copy_params_op(v1_list, v2_list):
@@ -59,7 +62,7 @@ class Worker(object):
         self.name = name
         self.discount_factor = discount_factor
         self.max_global_steps = max_global_steps
-        self.global_step = tf.contrib.framework.get_global_step()
+        self.global_step = tf.train.get_global_step()
         self.global_policy_net = policy_net
         self.global_value_net = value_net
         self.global_counter = global_counter
@@ -70,28 +73,33 @@ class Worker(object):
         # Create local policy/value nets that are not updated asynchronously
         with tf.variable_scope(name):
             self.policy_net = GaussianPolicyEstimator(
-                policy_net.num_outputs, value_net.static_state_shape, value_net.temporal_state_shape, shared_layer
+                policy_net.num_actions, static_size=policy_net.static_size, temporal_size=policy_net.temporal_size,
+                shared_layer=shared_layer
             )
             self.value_net = ValueEstimator(
-                value_net.static_state_shape, value_net.temporal_state_shape, shared_layer,
+                static_size=policy_net.static_size, temporal_size=policy_net.temporal_size,
+                shared_layer=shared_layer,
                 reuse=True
             )
 
         # Op to copy params from global policy/valuenets
         self.copy_params_op = make_copy_params_op(
             tf.contrib.slim.get_variables(scope="global", collection=tf.GraphKeys.TRAINABLE_VARIABLES),
-            tf.contrib.slim.get_variables(scope=self.name+'/', collection=tf.GraphKeys.TRAINABLE_VARIABLES))
+            tf.contrib.slim.get_variables(scope=self.name+'/', collection=tf.GraphKeys.TRAINABLE_VARIABLES)
+        )
 
         self.vnet_train_op = make_train_op(self.value_net, self.global_value_net)
         self.pnet_train_op = make_train_op(self.policy_net, self.global_policy_net)
 
         self.state = None
-        self.history = None
+        self.history = []
 
     def run(self, sess, coord, t_max):
         with sess.as_default(), sess.graph.as_default():
             # Initial state
-            self.state = self._get_static_and_temporal_states(self.env.reset())
+            self.state = self.env.reset()
+            self.history.append(self.state)
+
             try:
                 while not coord.should_stop():
                     # Copy Parameters from the global networks
@@ -128,20 +136,29 @@ class Worker(object):
         return preds["logits"][0]
 
     @staticmethod
-    def _get_static_and_temporal_states(state):
+    def get_temporal_states(history):
+        raise NotImplementedError
+
+    @staticmethod
+    def get_random_action(mu, sigma):
         raise NotImplementedError
 
     def run_n_steps(self, n, sess):
         transitions = []
-        for _ in range(n):
+        for _ in xrange(n):
             # Take a step
-            action_mu, action_sigma = self._policy_net_predict(self.state, self.history, sess)
-            action = np.random.normal(action_mu, action_sigma, len(action_mu))
+            action_mu, action_sigma = self._policy_net_predict(self.state, self.get_temporal_states(self.history), sess)
+            action = self.get_random_action(action_mu, action_sigma)
             next_state, reward, done, _ = self.env.step(action)
 
             # Store transition
             transitions.append(Transition(
-                state=self.state, action=action, reward=reward, next_state=next_state, done=done))
+                state=self.state,
+                action=action,
+                reward=reward,
+                next_state=next_state,
+                done=done)
+            )
 
             # Increase local and global counters
             local_t = next(self.local_counter)
@@ -151,10 +168,13 @@ class Worker(object):
                 tf.logging.info("{}: local Step {}, global step {}".format(self.name, local_t, global_t))
 
             if done:
-                self.state, self.history = self._get_static_and_temporal_states(self.env.reset())
+                self.state = self.env.reset()
+                self.history.append(self.state)
                 break
             else:
-                self.state, self.history = self._get_static_and_temporal_states(next_state)
+                self.state = next_state
+                self.history.append(next_state)
+
         return transitions, local_t, global_t
 
     def update(self, transitions, sess):
@@ -168,44 +188,61 @@ class Worker(object):
 
         # If we episode was not done we bootstrap the value from the last state
         reward = 0.0
+        history = self.history
         if not transitions[-1].done:
-            state, history = self._get_static_and_temporal_states(transitions[-1].next_state)
-            reward = self._value_net_predict(state, history, sess)
+            state = transitions[-1].next_state
+            reward = self._value_net_predict(
+                state, self.get_temporal_states(history), sess
+            )
 
         # Accumulate minibatch exmaples
         states = []
         policy_advantages = []
         value_targets = []
         actions = []
+        temporal_states = []
+        history = np.vstack(history)
 
-        for transition in transitions[::-1]:
+        for idx, transition in enumerate(transitions[::-1]):
             reward = transition.reward + self.discount_factor * reward
-            state, history = self._get_static_and_temporal_states(transition.state)
-            policy_advantage= (reward - self._value_net_predict(state, history, sess))
+            state = transition.state
+            history_t = history[:-(idx + 1)]
+            policy_advantage = reward - self._value_net_predict(state, self.get_temporal_states(history_t), sess)
             # Accumulate updates
+            temporal_states.append(self.get_temporal_states(history_t))
             states.append(transition.state)
             actions.append(transition.action)
             policy_advantages.append(policy_advantage)
             value_targets.append(reward)
 
+        temporal_state_matrix = tf.keras.preprocessing.sequence.pad_sequences(
+            temporal_states, dtype='float32', padding='post'
+        )
+        print temporal_state_matrix.shape
+
         feed_dict = {
             self.policy_net.states: np.array(states),
+            self.policy_net.history: temporal_state_matrix,
             self.policy_net.advantages: policy_advantages,
-            self.policy_net.actions: actions,
+            self.policy_net.actions: np.array(actions).reshape((-1, self.global_policy_net.num_actions)),
             self.value_net.states: np.array(states),
+            self.value_net.history: temporal_state_matrix,
             self.value_net.targets: value_targets,
         }
 
         # Train the global estimators using local gradients
-        global_step, pnet_loss, vnet_loss, _, _, pnet_summaries, vnet_summaries = sess.run([
-            self.global_step,
-            self.policy_net.loss,
-            self.value_net.loss,
-            self.pnet_train_op,
-            self.vnet_train_op,
-            self.policy_net.summaries,
-            self.value_net.summaries
-        ], feed_dict)
+        global_step, pnet_loss, vnet_loss, _, _, pnet_summaries, vnet_summaries = sess.run(
+            [
+                self.global_step,
+                self.policy_net.loss,
+                self.value_net.loss,
+                self.pnet_train_op,
+                self.vnet_train_op,
+                self.policy_net.summaries,
+                self.value_net.summaries
+            ],
+            feed_dict
+        )
 
         # Write summaries
         if self.summary_writer is not None:
@@ -214,3 +251,15 @@ class Worker(object):
             self.summary_writer.flush()
 
         return pnet_loss, vnet_loss, pnet_summaries, vnet_summaries
+
+
+class SolowWorker(Worker):
+
+    @staticmethod
+    def get_temporal_states(history):
+        return np.array(history)[:, 1][:, None]
+
+    @staticmethod
+    def get_random_action(mu, sigma):
+        raw_action = np.random.normal(mu, sigma, 1)[0]
+        return 1 / (1 + np.exp(-raw_action))
