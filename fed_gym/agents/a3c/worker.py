@@ -93,6 +93,7 @@ class Worker(object):
 
         self.state = None
         self.history = []
+        self.seq_lengths = None
 
     def run(self, sess, coord, t_max):
         with sess.as_default(), sess.graph.as_default():
@@ -147,7 +148,9 @@ class Worker(object):
         transitions = []
         for _ in xrange(n):
             # Take a step
-            action_mu, action_sigma = self._policy_net_predict(self.state, self.get_temporal_states(self.history), sess)
+            action_mu, action_sigma = self._policy_net_predict(
+                self.state, self.get_temporal_states(self.history), sess
+            )
             action = self.get_random_action(action_mu, action_sigma)
             next_state, reward, done, _ = self.env.step(action)
 
@@ -191,9 +194,7 @@ class Worker(object):
         history = self.history
         if not transitions[-1].done:
             state = transitions[-1].next_state
-            reward = self._value_net_predict(
-                state, self.get_temporal_states(history), sess
-            )
+            reward = self._value_net_predict(state, self.get_temporal_states(history), sess)
 
         # Accumulate minibatch exmaples
         states = []
@@ -218,7 +219,6 @@ class Worker(object):
         temporal_state_matrix = tf.keras.preprocessing.sequence.pad_sequences(
             temporal_states, dtype='float32', padding='post'
         )
-        print temporal_state_matrix.shape
 
         feed_dict = {
             self.policy_net.states: np.array(states),

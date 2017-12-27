@@ -1,5 +1,4 @@
 import itertools
-import numpy as np
 import tensorflow as tf
 
 from fed_gym.agents.a3c.worker import SolowWorker
@@ -91,6 +90,7 @@ class WorkerTest(tf.test.TestCase):
             sess.run(tf.global_variables_initializer())
             w.state = w.env.reset()
             w.history = [w.state]
+            w.seq_lengths = 1.
             transitions, local_t, global_t = w.run_n_steps(n_steps, sess)
             policy_net_loss, value_net_loss, policy_net_summaries, value_net_summaries = w.update(transitions, sess)
 

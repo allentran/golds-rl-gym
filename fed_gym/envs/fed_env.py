@@ -40,14 +40,14 @@ class SolowEnv(gym.Env):
 
         return (
             state,
-            np.log((1 - s) * y_t),
+            np.log((1 - s) * y_t + 1e-4),
             False,
             {}
         )
 
     def _reset(self):
         self.k = 1.
-        self.z = 0.
+        self.z = np.random.uniform(-1e-4, 1e-4)
 
         return np.array([self.k, self.z]).flatten()
 

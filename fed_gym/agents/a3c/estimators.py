@@ -40,12 +40,14 @@ def dense_layers(X, add_summaries=False):
   return fc1
 
 
+def true_length(sequence):
+    used = tf.sign(tf.reduce_max(tf.abs(sequence), axis=2))
+    seq_length = tf.reduce_sum(used, 1)
+    seq_length = tf.cast(seq_length, tf.int32)
+    return seq_length
+
+
 def rnn_graph_lstm(inputs, hidden_size, num_layers, is_training):
-    def length(sequence):
-        used = tf.sign(tf.reduce_max(tf.abs(sequence), 2))
-        seq_length = tf.reduce_sum(used, 1)
-        seq_length = tf.cast(seq_length, tf.int32)
-        return seq_length
 
     def make_cell():
       return tf.contrib.rnn.GRUCell(
@@ -54,8 +56,18 @@ def rnn_graph_lstm(inputs, hidden_size, num_layers, is_training):
 
     cell = tf.contrib.rnn.MultiRNNCell(
         [make_cell() for _ in range(num_layers)])
-    outputs, state = tf.nn.dynamic_rnn(cell, inputs, dtype=tf.float32, sequence_length=length(inputs))
+    outputs, state = tf.nn.dynamic_rnn(cell, inputs, dtype=tf.float32, sequence_length=true_length(inputs))
     return outputs, state
+
+
+def last_relevant(output, length):
+    batch_size = tf.shape(output)[0]
+    max_length = tf.shape(output)[1]
+    out_size = int(output.get_shape()[2])
+    index = tf.range(0, batch_size) * max_length + (length - 1)
+    flat = tf.reshape(output, [-1, out_size])
+    relevant = tf.gather(flat, index)
+    return relevant
 
 
 class GaussianPolicyEstimator():
@@ -89,8 +101,9 @@ class GaussianPolicyEstimator():
 
         # Graph shared with Value Net
         with tf.variable_scope("shared", reuse=reuse):
-            output_t, state_t = shared_layer(X_t)
-            dense_temporal = dense_layers(output_t[:, -1, :])
+            output_t, state_T = shared_layer(X_t)
+            output_T = last_relevant(output_t, true_length(X_t))
+            dense_temporal = dense_layers(output_T)
             dense_static = tf.contrib.layers.fully_connected(X, static_hidden_size, activation_fn=None)
             dense_output = tf.concat([dense_temporal, dense_static], axis=-1)
 
@@ -153,6 +166,7 @@ class ValueEstimator():
         self.temporal_size = temporal_size
 
         self.states = tf.placeholder(shape=(None, static_size), dtype=tf.float32, name="X")
+        self.seq_length = tf.placeholder(shape=(None,), dtype=tf.int32, name='seq_length')
         self.history = tf.placeholder(shape=(None, None, temporal_size), dtype=tf.float32, name="X_t")
         self.targets = tf.placeholder(shape=(None, ), dtype=tf.float32, name="targets")
 
@@ -162,7 +176,8 @@ class ValueEstimator():
         # Graph shared with Value Net
         with tf.variable_scope("shared", reuse=reuse):
             output_t, state_t = shared_layer(X_t)
-            dense_temporal = dense_layers(output_t[:, -1, :])
+            output_T = last_relevant(output_t, length=true_length(X_t))
+            dense_temporal = dense_layers(output_T)
             dense_static = tf.contrib.layers.fully_connected(X, static_hidden_size, activation_fn=None)
             dense_output = tf.concat([dense_temporal, dense_static], axis=-1)
 
