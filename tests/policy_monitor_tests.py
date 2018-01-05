@@ -30,11 +30,11 @@ class PolicyMonitorTest(tf.test.TestCase):
         with tf.variable_scope("global"):
             self.global_policy_net = GaussianPolicyEstimator(
                 self.num_actions, static_size=self.input_size, temporal_size=self.temporal_size,
-                shared_layer=lambda x: rnn_graph_lstm(x, 32, 2, True)
+                shared_layer=lambda x: rnn_graph_lstm(x, 32, 1, True)
             )
             self.global_value_net = ValueEstimator(
                 static_size=self.input_size, temporal_size=self.temporal_size,
-                shared_layer=lambda x: rnn_graph_lstm(x, 32, 2, True),
+                shared_layer=lambda x: rnn_graph_lstm(x, 32, 1, True),
                 reuse=True
             )
 

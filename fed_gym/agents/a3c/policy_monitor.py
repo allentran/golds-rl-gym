@@ -37,7 +37,7 @@ class PolicyMonitor(object):
         with tf.variable_scope("policy_eval"):
             self.policy_net = GaussianPolicyEstimator(
                 num_actions, static_size=input_size, temporal_size=temporal_size,
-                shared_layer=lambda x: rnn_graph_lstm(x, 32, 2, True)
+                shared_layer=lambda x: rnn_graph_lstm(x, 32, 1, True)
             )
 
         # Op to copy params from global policy/value net parameters
