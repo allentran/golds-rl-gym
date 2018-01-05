@@ -50,5 +50,5 @@ class PolicyMonitorTest(tf.test.TestCase):
 
         with self.test_session() as sess:
             sess.run(tf.global_variables_initializer())
-            total_reward, episode_length = pe.eval_once(sess, max_steps=10)
+            total_reward, episode_length = pe.eval_once(sess)
             self.assertTrue(episode_length > 10)

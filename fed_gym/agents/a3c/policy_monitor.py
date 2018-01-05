@@ -53,7 +53,7 @@ class PolicyMonitor(object):
         preds = sess.run(self.policy_net.predictions, feed_dict)
         return preds["mu"][0], preds["sigma"][0]
 
-    def eval_once(self, sess, max_steps=None):
+    def eval_once(self, sess):
         with sess.as_default(), sess.graph.as_default():
             # Copy params to local model
             global_step, _ = sess.run([tf.train.get_global_step(), self.copy_params_op])
@@ -64,15 +64,15 @@ class PolicyMonitor(object):
             history = SolowWorker.get_temporal_states([state])
             total_reward = 0.0
             episode_length = 0
+            rewards = []
             while not done:
-                if max_steps and episode_length > max_steps:
-                    break
                 mu, sig = self._policy_net_predict(state, history, sess)
-                action = SolowWorker.get_random_action(mu, sig)
+                action = SolowWorker.transform_raw_action(mu[0])
                 next_state, reward, done, _ = self.env.step(action)
                 total_reward += reward
                 episode_length += 1
                 state = next_state
+                rewards.append(reward)
 
             # Add summaries
             episode_summary = tf.Summary()
@@ -85,20 +85,20 @@ class PolicyMonitor(object):
                 self.saver.save(sess, self.checkpoint_path)
 
             tf.logging.info(
-                "Eval results at step {}: total_reward {}, episode_length {}".format(
-                    global_step, total_reward, episode_length
+                "Eval results at step {}: avg_reward {}, std_reward {}, episode_length {}".format(
+                    global_step, np.mean(rewards), np.std(rewards), episode_length
                 )
             )
 
             return total_reward, episode_length
 
-    def continuous_eval(self, eval_every, sess, coord, max_steps=None):
+    def continuous_eval(self, eval_every, sess, coord):
         """
         Continuously evaluates the policy every [eval_every] seconds.
         """
         try:
             while not coord.should_stop():
-                self.eval_once(sess, max_steps=max_steps)
+                self.eval_once(sess)
                 # Sleep until next evaluation cycle
                 time.sleep(eval_every)
         except tf.errors.CancelledError:
