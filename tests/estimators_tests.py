@@ -35,7 +35,7 @@ class PolicyEstimatorTest(tf.test.TestCase):
             sess.run(tf.global_variables_initializer())
 
             # Run feeds
-            for _ in xrange(100):
+            for _ in xrange(1000):
                 feed_dict = {
                     estimator.states: self.states,
                     estimator.history: self.temporal_states,
