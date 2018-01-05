@@ -1,9 +1,9 @@
+import random
 
 import numpy as np
 
 import gym
-from gym import error, spaces, utils
-from gym.utils import seeding
+from gym import spaces
 
 
 class SolowEnv(gym.Env):
@@ -27,8 +27,10 @@ class SolowEnv(gym.Env):
     def _k_transition(self, k_t, y_t, s):
         return (1 - self.delta) * k_t + s * y_t
 
-    def _step(self, s):
+    def _k_ss(self, savings):
+        return (savings / self.delta) ** (1 / (1 - self.alpha))
 
+    def _step(self, s):
         y_t = np.exp(self.z) * (self.k ** self.alpha)
         z_next = self.rho * self.z + np.random.normal(0, self.sigma)
         k_next = self._k_transition(self.k, y_t, s)
@@ -36,18 +38,29 @@ class SolowEnv(gym.Env):
         self.z = z_next
         self.k = k_next
 
-        state = np.array([self.k, self.z]).flatten()
+        state = np.array([np.log(self.k), self.z]).flatten()
 
         return (
             state,
-            np.log((1 - s) * y_t + 1e-4),
-            False,
+            (1 - s) * y_t,
+            s <= 0 or s >= 1.,
             {}
         )
 
     def _reset(self):
-        self.k = 1.
-        self.z = np.random.uniform(-1e-4, 1e-4)
+        self.k = self._k_ss(np.random.uniform(0.05, 0.9))
+        self.z = np.random.uniform(-1e-2, 1e-2)
+
+        return np.array([np.log(self.k), self.z]).flatten()
+
+
+class SolowSSEnv(SolowEnv):
+    def __init__(self, delta=0.02, sigma=0.02):
+        super(SolowSSEnv, self).__init__(delta, sigma)
+
+    def _reset(self):
+        self.k = self._k_ss(self.alpha)
+        self.z = np.random.uniform(-1e-2, 1e-2)
 
         return np.array([self.k, self.z]).flatten()
 

@@ -37,7 +37,7 @@ class SolowEnvTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         super(SolowEnvTests, cls).setUpClass()
-        cls.static_env = fed_env.SolowEnv(sigma=0.)
+        cls.static_env = fed_env.SolowSSEnv(sigma=0.)
         cls.stochastic_env = fed_env.SolowEnv(sigma=0.02)
 
     def steady_state_test(self):
@@ -47,7 +47,7 @@ class SolowEnvTests(unittest.TestCase):
 
         for _ in xrange(10000):
             state, consumption, done, _ = self.static_env.step(savings)
-            capital = state[0]
+            capital = np.exp(state[0])
 
         self.assertFalse(done)
         np.testing.assert_almost_equal(capital, k_ss)
@@ -59,9 +59,9 @@ class SolowEnvTests(unittest.TestCase):
 
         capital_states = []
 
-        for _ in xrange(10000):
+        for _ in xrange(100000):
             state, consumption, done, _ = self.stochastic_env.step(savings)
-            capital = state[0]
+            capital = np.exp(state[0])
             capital_states.append(capital)
 
         self.assertFalse(done)
