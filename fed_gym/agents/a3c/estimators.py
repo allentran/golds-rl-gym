@@ -1,5 +1,7 @@
 import math
 
+import numpy as np
+
 from tensorflow.contrib import keras
 import tensorflow as tf
 
@@ -60,16 +62,6 @@ def rnn_graph_lstm(inputs, hidden_size, num_layers, is_training):
     return outputs, state
 
 
-def last_relevant(output, length):
-    batch_size = tf.shape(output)[0]
-    max_length = tf.shape(output)[1]
-    out_size = int(output.get_shape()[2])
-    index = tf.range(0, batch_size) * max_length + (length - 1)
-    flat = tf.reshape(output, [-1, out_size])
-    relevant = tf.gather(flat, index)
-    return relevant
-
-
 class GaussianPolicyEstimator():
     """
     Policy Function approximator. Given a observation, returns probabilities
@@ -85,11 +77,13 @@ class GaussianPolicyEstimator():
         train ops would set this to false.
     """
 
-    def __init__(self, num_actions, static_size, temporal_size, shared_layer, static_hidden_size=32, reuse=False, trainable=True):
+    def __init__(self, num_actions, static_size, temporal_size, shared_layer, static_hidden_size=64, reuse=False, trainable=True, learning_rate=1e-4):
 
         self.states = tf.placeholder(shape=(None, static_size), dtype=tf.float32, name="X")
         self.history = tf.placeholder(shape=(None, None, temporal_size), dtype=tf.float32, name="X_t")
         self.advantages = tf.placeholder(shape=(None,), dtype=tf.float32, name='advantages')
+
+        # Note: if actions are transformed, they should be provided in the untransformed shape (i.e N(mu, sig^2) space)
         self.actions = tf.placeholder(shape=(None, num_actions), dtype=tf.float32, name="actions")
 
         self.num_actions = num_actions
@@ -99,16 +93,18 @@ class GaussianPolicyEstimator():
         X = tf.to_float(self.states)
         X_t = tf.to_float(self.history)
 
-        # Graph shared with Value Net
         with tf.variable_scope("shared", reuse=reuse):
             output_t, state_T = shared_layer(X_t)
-            output_T = last_relevant(output_t, true_length(X_t))
-            dense_temporal = dense_layers(output_T)
-            dense_static = tf.contrib.layers.fully_connected(X, static_hidden_size, activation_fn=None)
+            dense_temporal = dense_layers(state_T[-1])
+            dense_static = tf.contrib.layers.fully_connected(X, static_hidden_size * 2)
+            dense_static = tf.contrib.layers.fully_connected(dense_static, static_hidden_size)
             dense_output = tf.concat([dense_temporal, dense_static], axis=-1)
 
         with tf.variable_scope("policy_net"):
-            normal_params = tf.contrib.layers.fully_connected(dense_output, num_actions * 2, activation_fn=None)
+
+            normal_params = tf.contrib.layers.fully_connected(dense_output, static_hidden_size * 2)
+            normal_params = tf.contrib.layers.fully_connected(normal_params, static_hidden_size)
+            normal_params = 4. * tf.contrib.layers.fully_connected(normal_params, num_actions * 2, activation_fn=tf.nn.tanh)
             normal_params = tf.reshape(normal_params, [-1, num_actions, 2])
             mu = normal_params[:, :, 0]
             sigma = tf.nn.softplus(normal_params[:, :, 1] + keras.backend.epsilon())
@@ -121,16 +117,22 @@ class GaussianPolicyEstimator():
             self.entropy = 0.5 * (tf.log(2 * math.pi * tf.square(sigma) + keras.backend.epsilon()) + 1)
             self.entropy_mean = tf.reduce_mean(self.entropy, name="entropy_mean")
 
-            nll = tf.log(sigma) + tf.square(self.actions - mu) / (2 * tf.square(sigma))
+            nll = tf.log(sigma + keras.backend.epsilon()) + tf.square(self.actions - mu) / (2 * tf.square(sigma))
             loss = nll * self.advantages[:, None]
-            self.loss = tf.reduce_mean(tf.reduce_sum(loss, name="loss"))
+            self.loss = tf.identity(tf.reduce_sum(loss) - 1e-3 * self.entropy_mean, name='loss')
 
             tf.summary.scalar(self.loss.op.name, self.loss)
             tf.summary.scalar(self.entropy_mean.op.name, self.entropy_mean)
-            tf.summary.histogram(self.entropy.op.name, self.entropy)
+            tf.summary.histogram('entropy', self.entropy)
+            tf.summary.histogram('nll', nll)
+            tf.summary.histogram('advantages', self.advantages)
+            tf.summary.histogram('actions', self.actions)
+            tf.summary.histogram('sigmoid_actions', tf.nn.sigmoid(self.actions))
+            tf.summary.histogram('mu', mu)
+            tf.summary.histogram('sigma', sigma)
 
             if trainable:
-                self.optimizer = tf.train.AdamOptimizer(1e-4)
+                self.optimizer = tf.train.AdamOptimizer(learning_rate)
                 self.grads_and_vars = self.optimizer.compute_gradients(self.loss)
                 self.grads_and_vars = [[grad, var] for grad, var in self.grads_and_vars if grad is not None]
                 self.train_op = self.optimizer.apply_gradients(
@@ -147,8 +149,7 @@ class GaussianPolicyEstimator():
 
 class ValueEstimator():
     """
-    Policy Function approximator. Given a observation, returns probabilities
-    over all possible actions.
+    Value Function approximator.
 
     Args:
       num_outputs: Size of the action space.
@@ -160,7 +161,7 @@ class ValueEstimator():
         train ops would set this to false.
     """
 
-    def __init__(self, static_size, temporal_size, shared_layer, static_hidden_size=32, reuse=False, trainable=True):
+    def __init__(self, static_size, temporal_size, shared_layer, static_hidden_size=64, reuse=False, trainable=True, learning_rate=1e-3):
 
         self.static_size = static_size
         self.temporal_size = temporal_size
@@ -173,19 +174,20 @@ class ValueEstimator():
         X = tf.to_float(self.states)
         X_t = tf.to_float(self.history)
 
-        # Graph shared with Value Net
         with tf.variable_scope("shared", reuse=reuse):
-            output_t, state_t = shared_layer(X_t)
-            output_T = last_relevant(output_t, length=true_length(X_t))
-            dense_temporal = dense_layers(output_T)
-            dense_static = tf.contrib.layers.fully_connected(X, static_hidden_size, activation_fn=None)
+            output_t, state_T = shared_layer(X_t)
+            dense_temporal = dense_layers(state_T[-1])
+            dense_static = tf.contrib.layers.fully_connected(X, static_hidden_size * 2)
+            dense_static = tf.contrib.layers.fully_connected(dense_static, static_hidden_size)
             dense_output = tf.concat([dense_temporal, dense_static], axis=-1)
 
         with tf.variable_scope("value_net"):
+
             self.logits = tf.contrib.layers.fully_connected(
                 inputs=dense_output,
                 num_outputs=1,
-                activation_fn=None)
+                activation_fn=tf.nn.softplus
+            )
             self.logits = tf.squeeze(self.logits, squeeze_dims=[1], name="logits")
 
             self.losses = tf.squared_difference(self.logits, self.targets)
@@ -204,11 +206,12 @@ class ValueEstimator():
             tf.summary.scalar("{}/reward_max".format(prefix), tf.reduce_max(self.targets))
             tf.summary.scalar("{}/reward_min".format(prefix), tf.reduce_min(self.targets))
             tf.summary.scalar("{}/reward_mean".format(prefix), tf.reduce_mean(self.targets))
+            tf.summary.histogram("{}/capital".format(prefix), tf.exp(self.states[0, :]))
             tf.summary.histogram("{}/reward_targets".format(prefix), self.targets)
             tf.summary.histogram("{}/values".format(prefix), self.logits)
 
             if trainable:
-                self.optimizer = tf.train.AdamOptimizer(1e-4)
+                self.optimizer = tf.train.AdamOptimizer(learning_rate)
                 self.grads_and_vars = self.optimizer.compute_gradients(self.loss)
                 self.grads_and_vars = [[grad, var] for grad, var in self.grads_and_vars if grad is not None]
                 self.train_op = self.optimizer.apply_gradients(
