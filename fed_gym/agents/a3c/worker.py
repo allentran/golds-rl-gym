@@ -79,7 +79,6 @@ class Worker(object):
             self.value_net = ValueEstimator(
                 static_size=policy_net.static_size, temporal_size=policy_net.temporal_size,
                 shared_layer=shared_layer,
-                reuse=True
             )
 
         # Op to copy params from global policy/valuenets
@@ -95,7 +94,7 @@ class Worker(object):
         self.history = []
         self.seq_lengths = None
 
-    def run(self, sess, coord, t_max):
+    def run(self, sess, coord, t_max, always_bootstrap=False):
         with sess.as_default(), sess.graph.as_default():
             # Initial state
             self.state = self.env.reset()
@@ -115,7 +114,7 @@ class Worker(object):
                         return
 
                     # Update the global networks
-                    self.update(transitions, sess)
+                    self.update(transitions, sess, always_bootstrap=always_bootstrap)
 
             except tf.errors.CancelledError:
                 return
@@ -167,9 +166,6 @@ class Worker(object):
             local_t = next(self.local_counter)
             global_t = next(self.global_counter)
 
-            if local_t % 100 == 0:
-                tf.logging.info("{}: local Step {}, global step {}".format(self.name, local_t, global_t))
-
             if done:
                 self.state = self.env.reset()
                 self.history.append(self.state)
@@ -180,7 +176,7 @@ class Worker(object):
 
         return transitions, local_t, global_t
 
-    def update(self, transitions, sess):
+    def update(self, transitions, sess, always_bootstrap=False):
         """
         Updates global policy and value networks based on collected experience
 
@@ -192,7 +188,7 @@ class Worker(object):
         # If we episode was not done we bootstrap the value from the last state
         reward = 0.0
         history = self.history
-        if not transitions[-1].done:
+        if not transitions[-1].done or always_bootstrap:
             state = transitions[-1].next_state
             reward = self._value_net_predict(state, self.get_temporal_states(history), sess)
 
@@ -200,7 +196,7 @@ class Worker(object):
         states = []
         policy_advantages = []
         value_targets = []
-        actions = []
+        transformed_actions = []
         temporal_states = []
         history = np.vstack(history)
 
@@ -212,7 +208,7 @@ class Worker(object):
             # Accumulate updates
             temporal_states.append(self.get_temporal_states(history_t))
             states.append(transition.state)
-            actions.append(transition.action)
+            transformed_actions.append(transition.action)
             policy_advantages.append(policy_advantage)
             value_targets.append(reward)
 
@@ -224,7 +220,7 @@ class Worker(object):
             self.policy_net.states: np.array(states),
             self.policy_net.history: temporal_state_matrix,
             self.policy_net.advantages: policy_advantages,
-            self.policy_net.actions: np.array(actions).reshape((-1, self.global_policy_net.num_actions)),
+            self.policy_net.actions: self.untransform_action(np.array(transformed_actions)).reshape((-1, self.global_policy_net.num_actions)),
             self.value_net.states: np.array(states),
             self.value_net.history: temporal_state_matrix,
             self.value_net.targets: value_targets,
@@ -252,6 +248,14 @@ class Worker(object):
 
         return pnet_loss, vnet_loss, pnet_summaries, vnet_summaries
 
+    @staticmethod
+    def transform_raw_action(raw_action):
+        raise NotImplementedError
+
+    @staticmethod
+    def untransform_action(transformed_action):
+        raise NotImplementedError
+
 
 class SolowWorker(Worker):
 
@@ -261,5 +265,13 @@ class SolowWorker(Worker):
 
     @staticmethod
     def get_random_action(mu, sigma):
-        raw_action = np.random.normal(mu, sigma, 1)[0]
+        raw_action = np.random.normal(mu, sigma)[0]
+        return SolowWorker.transform_raw_action(raw_action)
+
+    @staticmethod
+    def transform_raw_action(raw_action):
         return 1 / (1 + np.exp(-raw_action))
+
+    @staticmethod
+    def untransform_action(savings_rate):
+        return np.log(savings_rate / (1 - savings_rate))
