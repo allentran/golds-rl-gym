@@ -11,7 +11,7 @@ class SolowEnv(gym.Env):
     Classic Solow model (no growth or pop growth) with log consumption utility
     States are histories of capital and tech innovation/shock
     """
-    def __init__(self, delta=0.02, sigma=0.02):
+    def __init__(self, delta=0.02, sigma=0.1):
         super(SolowEnv, self).__init__()
 
         self.delta = delta
