@@ -6,38 +6,11 @@ from tensorflow.contrib import keras
 import tensorflow as tf
 
 
-def build_shared_network(X, add_summaries=False):
-    """
-    Builds a 3-layer network conv -> conv -> fc as described
-    in the A3C paper. This network is shared by both the policy and value net.
-
-    Args:
-      X: Inputs
-      add_summaries: If true, add layer summaries to Tensorboard.
-
-    Returns:
-      Final layer activations.
-    """
-
-    # Fully connected layer
-    fc1 = tf.contrib.layers.fully_connected(
-        inputs=X,
-        num_outputs=256,
-        scope="fc_shared")
-
-    if add_summaries:
-        tf.contrib.layers.summarize_activation(fc1)
-
-    return fc1
-
-def dense_layers(X, add_summaries=False):
+def dense_layers(X):
   fc1 = tf.contrib.layers.fully_connected(
     inputs=X,
     num_outputs=256,
     scope="fc1")
-
-  if add_summaries:
-    tf.contrib.layers.summarize_activation(fc1)
 
   return fc1
 
@@ -59,7 +32,7 @@ def rnn_graph_lstm(inputs, hidden_size, num_layers, is_training):
     cell = tf.contrib.rnn.MultiRNNCell(
         [make_cell() for _ in range(num_layers)])
     outputs, state = tf.nn.dynamic_rnn(cell, inputs, dtype=tf.float32, sequence_length=true_length(inputs))
-    return outputs, state
+    return state[-1]
 
 
 class GaussianPolicyEstimator():
@@ -93,21 +66,19 @@ class GaussianPolicyEstimator():
         X = tf.to_float(self.states)
         X_t = tf.to_float(self.history)
 
-        with tf.variable_scope("shared", reuse=reuse):
-            output_t, state_T = shared_layer(X_t)
-            dense_temporal = dense_layers(state_T[-1])
+        with tf.variable_scope("policy_net"):
+            state_T = shared_layer(X_t)
+            dense_temporal = dense_layers(state_T)
             dense_static = tf.contrib.layers.fully_connected(X, static_hidden_size * 2)
             dense_static = tf.contrib.layers.fully_connected(dense_static, static_hidden_size)
             dense_output = tf.concat([dense_temporal, dense_static], axis=-1)
 
-        with tf.variable_scope("policy_net"):
-
             normal_params = tf.contrib.layers.fully_connected(dense_output, static_hidden_size * 2)
             normal_params = tf.contrib.layers.fully_connected(normal_params, static_hidden_size)
-            normal_params = 4. * tf.contrib.layers.fully_connected(normal_params, num_actions * 2, activation_fn=tf.nn.tanh)
+            normal_params = tf.contrib.layers.fully_connected(normal_params, num_actions * 2, activation_fn=None)
             normal_params = tf.reshape(normal_params, [-1, num_actions, 2])
             mu = normal_params[:, :, 0]
-            sigma = tf.nn.softplus(normal_params[:, :, 1] + keras.backend.epsilon())
+            sigma = tf.nn.softplus(normal_params[:, :, 1]) + keras.backend.epsilon()
 
             self.predictions = {
                 "mu": mu,
@@ -174,14 +145,12 @@ class ValueEstimator():
         X = tf.to_float(self.states)
         X_t = tf.to_float(self.history)
 
-        with tf.variable_scope("shared", reuse=reuse):
-            output_t, state_T = shared_layer(X_t)
-            dense_temporal = dense_layers(state_T[-1])
+        with tf.variable_scope("value_net"):
+            state_T = shared_layer(X_t)
+            dense_temporal = dense_layers(state_T)
             dense_static = tf.contrib.layers.fully_connected(X, static_hidden_size * 2)
             dense_static = tf.contrib.layers.fully_connected(dense_static, static_hidden_size)
             dense_output = tf.concat([dense_temporal, dense_static], axis=-1)
-
-        with tf.variable_scope("value_net"):
 
             self.logits = tf.contrib.layers.fully_connected(
                 inputs=dense_output,
@@ -206,7 +175,8 @@ class ValueEstimator():
             tf.summary.scalar("{}/reward_max".format(prefix), tf.reduce_max(self.targets))
             tf.summary.scalar("{}/reward_min".format(prefix), tf.reduce_min(self.targets))
             tf.summary.scalar("{}/reward_mean".format(prefix), tf.reduce_mean(self.targets))
-            tf.summary.histogram("{}/capital".format(prefix), tf.exp(self.states[0, :]))
+            tf.summary.histogram("{}/capital".format(prefix), tf.exp(self.states[:, 0]))
+            tf.summary.histogram("{}/innovation".format(prefix), self.states[:, 1])
             tf.summary.histogram("{}/reward_targets".format(prefix), self.targets)
             tf.summary.histogram("{}/values".format(prefix), self.logits)
 

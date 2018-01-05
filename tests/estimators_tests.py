@@ -25,7 +25,7 @@ class PolicyEstimatorTest(tf.test.TestCase):
 
         estimator = GaussianPolicyEstimator(
             self.num_actions, static_size=self.input_size, temporal_size=self.temporal_size,
-            shared_layer=lambda x: rnn_graph_lstm(x, 32, 2, True),
+            shared_layer=lambda x: rnn_graph_lstm(x, 32, 1, True),
             learning_rate=1e-2
         )
 
@@ -49,12 +49,12 @@ class PolicyEstimatorTest(tf.test.TestCase):
                 grad_feed_dict = { k: v for k, v in zip(grads, grads_) }
                 _ = sess.run(estimator.train_op, grad_feed_dict)
 
-        self.assertLess(np.mean(np.abs((pred['mu'] - self.actions))), 0.1)
+        self.assertLess(np.mean(np.abs((pred['mu'] - self.actions))), 0.2)
 
     def gaussian_predict_test(self):
         estimator = GaussianPolicyEstimator(
             self.num_actions, static_size=self.input_size, temporal_size=self.temporal_size,
-            shared_layer=lambda x: rnn_graph_lstm(x, 32, 2, True)
+            shared_layer=lambda x: rnn_graph_lstm(x, 32, 1, True)
         )
 
         grads = [g for g, _ in estimator.grads_and_vars]
@@ -87,7 +87,6 @@ class PolicyEstimatorTest(tf.test.TestCase):
             self.assertEqual(pred['sigma'].shape[1], self.num_actions)
 
 
-
 class ValueEstimatorTest(tf.test.TestCase):
 
     @classmethod
@@ -107,7 +106,7 @@ class ValueEstimatorTest(tf.test.TestCase):
     def predict_test(self):
         estimator = ValueEstimator(
             static_size=self.input_size, temporal_size=self.temporal_size,
-            shared_layer=lambda x: rnn_graph_lstm(x, 32, 2, True),
+            shared_layer=lambda x: rnn_graph_lstm(x, 32, 1, True),
             learning_rate=1e-2
         )
 
