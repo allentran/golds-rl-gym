@@ -7,6 +7,7 @@ import tempfile
 
 from fed_gym.agents.a3c.policy_monitor import PolicyMonitor
 from fed_gym.agents.a3c.estimators import ValueEstimator, GaussianPolicyEstimator, rnn_graph_lstm
+from fed_gym.agents.a3c.worker import SolowWorker
 
 
 def make_env():
@@ -50,5 +51,5 @@ class PolicyMonitorTest(tf.test.TestCase):
 
         with self.test_session() as sess:
             sess.run(tf.global_variables_initializer())
-            total_reward, episode_length = pe.eval_once(sess)
+            total_reward, episode_length = pe.eval_once(sess, SolowWorker)
             self.assertTrue(episode_length > 10)

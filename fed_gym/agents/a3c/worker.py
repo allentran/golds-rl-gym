@@ -98,7 +98,7 @@ class Worker(object):
         with sess.as_default(), sess.graph.as_default():
             # Initial state
             self.state = self.env.reset()
-            self.history.append(self.state)
+            self.history.append(self.process_state(self.state))
 
             try:
                 while not coord.should_stop():
@@ -169,11 +169,11 @@ class Worker(object):
 
             if done:
                 self.state = self.env.reset()
-                self.history.append(self.state)
+                self.history.append(self.process_state(self.state))
                 break
             else:
                 self.state = next_state
-                self.history.append(next_state)
+                self.history.append(self.process_state(next_state))
 
         return transitions, local_t, global_t
 
@@ -191,7 +191,8 @@ class Worker(object):
         history = self.history
         if not transitions[-1].done or always_bootstrap:
             state = transitions[-1].next_state
-            reward = self._value_net_predict(state, self.get_temporal_states(history), sess)
+            processed_state = self.process_state(state)
+            reward = self._value_net_predict(processed_state, self.get_temporal_states(history), sess)
 
         # Accumulate minibatch exmaples
         states = []
@@ -203,12 +204,12 @@ class Worker(object):
 
         for idx, transition in enumerate(transitions[::-1]):
             reward = transition.reward + self.discount_factor * reward
-            state = transition.state
+            processed_state = self.process_state(transition.state)
             history_t = history[:-(idx + 1)]
-            policy_advantage = reward - self._value_net_predict(state, self.get_temporal_states(history_t), sess)
+            policy_advantage = reward - self._value_net_predict(processed_state, self.get_temporal_states(history_t), sess)
             # Accumulate updates
             temporal_states.append(self.get_temporal_states(history_t))
-            states.append(transition.state)
+            states.append(processed_state)
             transformed_actions.append(transition.action)
             policy_advantages.append(policy_advantage)
             value_targets.append(reward)
@@ -257,12 +258,20 @@ class Worker(object):
     def untransform_action(transformed_action):
         raise NotImplementedError
 
+    @staticmethod
+    def process_state(raw_state):
+        return raw_state
+
 
 class SolowWorker(Worker):
 
     @staticmethod
     def get_temporal_states(history):
         return np.array(history)[:, 1][:, None]
+
+    @staticmethod
+    def process_state(raw_state):
+        return np.array([np.log(raw_state[0]), raw_state[1]]).flatten()
 
     @staticmethod
     def get_random_action(mu, sigma, n_actions):
@@ -279,6 +288,20 @@ class SolowWorker(Worker):
 
 
 class TradeWorker(Worker):
+    @staticmethod
+    def process_state(raw_state):
+        new_states = []
+        n_assets = len(raw_state) - 1
+
+        new_states.append(np.log(raw_state[0] + 1e-4))
+
+        quantity = raw_state[1:1 + n_assets]
+        new_states += np.log(quantity + 1).tolist()
+        prices = raw_state[1 + n_assets:]
+        new_states += np.log(prices).tolist()
+
+        return np.array(new_states).flatten()
+
     @staticmethod
     def get_temporal_states(history):
         return np.vstack(history)

@@ -280,9 +280,10 @@ class ValueEstimator():
             tf.summary.scalar("{}/reward_min".format(prefix), tf.reduce_min(self.targets))
             tf.summary.scalar("{}/reward_mean".format(prefix), tf.reduce_mean(self.targets))
             tf.summary.histogram("{}/capital".format(prefix), tf.exp(self.states[:, 0]) - 1)
-            for idx in xrange(num_actions):
-                tf.summary.histogram("{}/quantity_{}".format(prefix, idx), tf.exp(self.states[:, 1 + idx]) - 1)
-                tf.summary.histogram("{}/prices_{}".format(prefix, idx), tf.exp(self.states[:, 1 + num_actions + idx]))
+            if static_size == 2 * num_actions + 1:
+                for idx in xrange(num_actions):
+                    tf.summary.histogram("{}/quantity_{}".format(prefix, idx), tf.exp(self.states[:, 1 + idx]) - 1)
+                    tf.summary.histogram("{}/prices_{}".format(prefix, idx), tf.exp(self.states[:, 1 + num_actions + idx]))
             tf.summary.histogram("{}/reward_targets".format(prefix), self.targets)
             tf.summary.histogram("{}/values".format(prefix), self.logits)
 

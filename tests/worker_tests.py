@@ -6,10 +6,10 @@ from fed_gym.agents.a3c.estimators import ValueEstimator, GaussianPolicyEstimato
 from fed_gym.envs.fed_env import SolowEnv
 
 
-class WorkerTest(tf.test.TestCase):
+class SolowWorkerTest(tf.test.TestCase):
 
     def setUp(self):
-        super(WorkerTest, self).setUp()
+        super(SolowWorkerTest, self).setUp()
 
         self.discount_factor = 0.99
         self.global_step = tf.Variable(0, name="global_step", trainable=False)
@@ -21,7 +21,7 @@ class WorkerTest(tf.test.TestCase):
         self.temporal_size = 1
         self.T = 10
 
-        with tf.variable_scope("global") as vs:
+        with tf.variable_scope("global"):
             self.global_policy_net = GaussianPolicyEstimator(
                 self.num_actions, static_size=self.input_size, temporal_size=self.temporal_size,
                 shared_layer=lambda x: rnn_graph_lstm(x, 32, 1, True)
@@ -29,7 +29,8 @@ class WorkerTest(tf.test.TestCase):
             self.global_value_net = ValueEstimator(
                 static_size=self.input_size, temporal_size=self.temporal_size,
                 shared_layer=lambda x: rnn_graph_lstm(x, 32, 1, True),
-                reuse=True
+                reuse=True,
+                num_actions=self.num_actions
             )
 
         self.shared_layer = lambda x: rnn_graph_lstm(x, 32, 1, True)
@@ -47,7 +48,7 @@ class WorkerTest(tf.test.TestCase):
 
         with self.test_session() as sess:
             sess.run(tf.global_variables_initializer())
-            state = w.env.reset()
+            state = SolowWorker.process_state(w.env.reset())
             temporal_state = w.get_temporal_states([state])
             mu, sig = w._policy_net_predict(state.flatten(), temporal_state.reshape((1, self.temporal_size)), sess)
 
@@ -68,7 +69,7 @@ class WorkerTest(tf.test.TestCase):
         with self.test_session() as sess:
             sess.run(tf.global_variables_initializer())
             state = w.env.reset()
-            temporal_state = w.get_temporal_states([state])
+            temporal_state = w.get_temporal_states([SolowWorker.process_state(state)])
             state_value = w._value_net_predict(state, temporal_state.reshape((1, 1)), sess)
             self.assertEqual(state_value.shape, ())
 
@@ -89,7 +90,7 @@ class WorkerTest(tf.test.TestCase):
         with self.test_session() as sess:
             sess.run(tf.global_variables_initializer())
             w.state = w.env.reset()
-            w.history = [w.state]
+            w.history = [SolowWorker.process_state(w.state)]
             w.seq_lengths = 1.
             transitions, local_t, global_t = w.run_n_steps(n_steps, sess)
             policy_net_loss, value_net_loss, policy_net_summaries, value_net_summaries = w.update(transitions, sess)

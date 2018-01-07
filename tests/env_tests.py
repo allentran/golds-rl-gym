@@ -19,12 +19,12 @@ class TradingEnvTests(unittest.TestCase):
         for _ in xrange(100):
             state, reward, done, _ = self.env.step(np.array([0.1, 0.1]))
 
-        log_cash = state[0]
-        log_quantity_plus_1 = state[1:3]
+        cash = state[0]
+        quantity = state[1:3]
 
         self.assertEqual(done, False)
-        self.assertLessEqual(np.exp(log_cash), self.env.MIN_CASH)
-        np.testing.assert_array_less(0, np.exp(log_quantity_plus_1) - 1)
+        self.assertLessEqual(cash, self.env.MIN_CASH)
+        np.testing.assert_array_less(0, quantity)
 
     def buysell_test(self):
         self.env.reset()
@@ -32,9 +32,9 @@ class TradingEnvTests(unittest.TestCase):
         self.env.step(np.array([0.1, 0.1]))
         state, reward, done, _ = self.env.step(np.array([-1., -1.]))
 
-        log_quantity_plus_1 = state[1:3]
+        quantity = state[1:3]
 
-        np.testing.assert_array_almost_equal(0, np.exp(log_quantity_plus_1) - 1)
+        np.testing.assert_array_almost_equal(0, quantity)
 
     def prices_test(self):
         self.env.reset()
@@ -42,7 +42,7 @@ class TradingEnvTests(unittest.TestCase):
         p = []
         for _ in xrange(100):
             state, reward, done, _ = self.env.step(np.array([0.0, 0.0]))
-            prices = np.exp(state[3:5])
+            prices = state[3:5]
             p.append(prices)
 
         np.testing.assert_array_less(np.std(p, axis=0), self.STD_P * 2)
@@ -63,7 +63,7 @@ class SolowEnvTests(unittest.TestCase):
 
         for _ in xrange(10000):
             state, consumption, done, _ = self.static_env.step(savings)
-            capital = np.exp(state[0])
+            capital = state[0]
 
         self.assertFalse(done)
         np.testing.assert_almost_equal(capital, k_ss)
@@ -77,7 +77,7 @@ class SolowEnvTests(unittest.TestCase):
 
         for _ in xrange(100000):
             state, consumption, done, _ = self.stochastic_env.step(savings)
-            capital = np.exp(state[0])
+            capital = state[0]
             capital_states.append(capital)
 
         self.assertFalse(done)

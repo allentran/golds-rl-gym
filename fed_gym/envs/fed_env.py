@@ -36,7 +36,7 @@ class SolowEnv(gym.Env):
         self.z = z_next
         self.k = k_next
 
-        state = np.array([np.log(self.k), self.z]).flatten()
+        state = np.array([self.k, self.z]).flatten()
 
         return (
             state,
@@ -49,7 +49,7 @@ class SolowEnv(gym.Env):
         self.k = self._k_ss(np.random.uniform(0.05, 0.9))
         self.z = np.random.uniform(-1e-2, 1e-2)
 
-        return np.array([np.log(self.k), self.z]).flatten()
+        return np.array([self.k, self.z]).flatten()
 
 
 class SolowSSEnv(SolowEnv):
@@ -112,7 +112,7 @@ class TradeAR1Env(gym.Env):
         self.prices = self._price_transition(self.prices)
 
         return (
-            np.hstack([np.log(self.cash_balance + 1e-4), np.log(self.quantity + 1), np.log(self.prices)]).flatten(),
+            np.hstack([self.cash_balance, self.quantity, self.prices]).flatten(),
             np.log(self.assets + 1e-4) - np.log(old_assets + 1e-4),
             done,
             {}
@@ -125,7 +125,7 @@ class TradeAR1Env(gym.Env):
         self.quantity = np.zeros((self.n_assets, ))
         self.e = np.zeros_like(self.quantity)
 
-        return np.hstack([np.log(self.cash_balance), np.log(self.quantity + 1), np.log(self.prices)])
+        return np.hstack([self.cash_balance, self.quantity, self.prices])
 
     def _seed(self, seed=None):
         if seed:

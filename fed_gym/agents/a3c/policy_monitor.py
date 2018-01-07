@@ -60,19 +60,21 @@ class PolicyMonitor(object):
             # Run an episode
             done = False
             state = self.env.reset()
-            history = worker.get_temporal_states([state])
+            processed_state = worker.process_state(state)
+            history = worker.get_temporal_states([processed_state])
             total_reward = 0.0
             episode_length = 0
             rewards = []
             while not done:
-                mu, sig = self._policy_net_predict(state, history, sess)
+                mu, sig = self._policy_net_predict(processed_state, history, sess)
                 action = worker.transform_raw_action(mu)
                 next_state, reward, done, _ = self.env.step(action)
-                new_temporal_state = worker.get_temporal_states([next_state])
+                next_processed_state = worker.process_state(next_state)
+                new_temporal_state = worker.get_temporal_states([next_processed_state])
                 history = np.vstack([history, new_temporal_state])[-max_sequence_length:, :]
-                total_reward += reward
+                total_reward += reward if not hasattr(reward, 'shape') else reward[0]
                 episode_length += 1
-                state = next_state
+                processed_state = next_processed_state
                 rewards.append(reward)
 
             # Add summaries
