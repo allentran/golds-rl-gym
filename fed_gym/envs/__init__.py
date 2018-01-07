@@ -1,1 +1,1 @@
-from fed_env import TradeEnv, SolowEnv, SolowSSEnv
+from fed_env import TradeAR1Env, SolowEnv, SolowSSEnv

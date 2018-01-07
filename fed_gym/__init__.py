@@ -1,8 +1,9 @@
 from gym.envs.registration import register
 
 register(
-    id='Fed-v0',
-    entry_point='fed_gym.envs:TradeEnv',
+    id='TradeAR1-v0',
+    entry_point='fed_gym.envs:TradeAR1Env',
+    max_episode_steps=1024
 )
 
 register(

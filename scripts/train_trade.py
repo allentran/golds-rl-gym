@@ -8,7 +8,7 @@ import multiprocessing
 import gym
 
 from fed_gym.agents.a3c.estimators import ValueEstimator, GaussianPolicyEstimator, rnn_graph_lstm
-from fed_gym.agents.a3c.worker import SolowWorker
+from fed_gym.agents.a3c.worker import TradeWorker
 from fed_gym.agents.a3c.policy_monitor import PolicyMonitor
 
 tf.logging.set_verbosity(tf.logging.INFO)
@@ -35,16 +35,13 @@ if not os.path.exists(CHECKPOINT_DIR):
 
 summary_writer = tf.summary.FileWriter(os.path.join(MODEL_DIR, "train"))
 
-INPUT_SIZE = 2
-TEMPORAL_SIZE = 1
-NUM_ACTIONS = 1
+INPUT_SIZE = 5
+TEMPORAL_SIZE = 5
+NUM_ACTIONS = 2
 
 
 def make_env():
-    return gym.envs.make("Solow-v0")
-
-def make_eval_env():
-    return gym.envs.make("SolowSS-v0")
+    return gym.envs.make("TradeAR1-v0")
 
 
 with tf.device("/cpu:0"):
@@ -77,7 +74,7 @@ with tf.device("/cpu:0"):
         if worker_id == 0:
             worker_summary_writer = summary_writer
 
-        worker = SolowWorker(
+        worker = TradeWorker(
             name="worker_{}".format(worker_id),
             env=make_env(),
             policy_net=policy_net,
@@ -95,13 +92,13 @@ with tf.device("/cpu:0"):
     # Used to occasionally save videos for our policy net
     # and write episode rewards to Tensorboard
     pe = PolicyMonitor(
-        env=make_eval_env(),
+        env=make_env(),
         policy_net=policy_net,
         summary_writer=summary_writer,
         saver=saver,
         num_actions=NUM_ACTIONS,
         input_size=INPUT_SIZE,
-        temporal_size=TEMPORAL_SIZE
+        temporal_size=TEMPORAL_SIZE,
     )
 
 
@@ -119,12 +116,12 @@ with tf.Session() as sess:
     # Start worker threads
     worker_threads = []
     for worker in workers:
-        t = threading.Thread(target=lambda worker=worker: worker.run(sess, coord, FLAGS.t_max, always_bootstrap=True))
+        t = threading.Thread(target=lambda worker=worker: worker.run(sess, coord, FLAGS.t_max, always_bootstrap=False, max_seq_length=20))
         t.start()
         worker_threads.append(t)
 
     # Start a thread for policy eval task
-    monitor_thread = threading.Thread(target=lambda: pe.continuous_eval(FLAGS.eval_every, sess, coord, SolowWorker))
+    monitor_thread = threading.Thread(target=lambda: pe.continuous_eval(FLAGS.eval_every, sess, coord, TradeWorker, max_seq_length=20))
     monitor_thread.start()
 
     # Wait for all workers to finish

@@ -1,5 +1,3 @@
-import random
-
 import numpy as np
 
 import gym
@@ -65,19 +63,21 @@ class SolowSSEnv(SolowEnv):
         return np.array([self.k, self.z]).flatten()
 
 
-class TradeEnv(gym.Env):
-    def __init__(self, starting_balance=100., base_rate=0.05, n_assets=2):
-        super(TradeEnv, self).__init__()
+class TradeAR1Env(gym.Env):
+    def __init__(self, starting_balance=10., base_rate=0.05, n_assets=2, std_p=0.05):
+        super(TradeAR1Env, self).__init__()
 
-        self.MIN_CASH = 10.
+        self.MIN_CASH = 1.
 
         self.starting_balance = starting_balance
         self.r = base_rate
         self.n_assets = n_assets
-        self.cov_mat = self._get_cov_mat()
+        self.rho_p = 0.9
+        self.std_e = np.sqrt((std_p ** 2) * (1 - self.rho_p ** 2))
 
         self.cash_balance = None
         self.prices = None
+        self.assets = None
         self.quantity = None
         self.e = None
 
@@ -85,61 +85,48 @@ class TradeEnv(gym.Env):
         self.action_space = spaces.Box(-1., 1., shape=(self.n_assets, ))
         self.observation_space = spaces.Tuple(
             [
-                spaces.Box(0., 10e5, shape=(1, )), # funds
-                spaces.Box(0., 10e5, shape=(2, )), # quantity
-                spaces.Box(0., 1., shape=(2, )) # price
+                spaces.Box(0., np.inf, shape=(1, )), # funds
+                spaces.Box(0., np.inf, shape=(2, )), # quantity
+                spaces.Box(0., np.inf, shape=(n_assets, )) # price
             ]
         )
 
-    def _get_cov_mat(self):
-        std_e = 1e-3
-        cov = np.zeros((self.n_assets, self.n_assets))
-        np.fill_diagonal(cov, std_e)
-
-        return cov
-
     def _price_transition(self, p):
-        rho = 0.9
-        self.e = rho * self.e + np.random.multivariate_normal(
-            np.zeros((self.n_assets, )), self.cov_mat
-        )
-        return p * np.exp(self.e)
+        e_t = self.std_e * np.random.normal(size=(self.n_assets, ))
+        return (p ** self.rho_p) * np.exp(e_t)
 
     def _step(self, action):
         assert self.action_space.contains(action)
         buy_mask = action > 0
         q_add = np.zeros_like(action)
-        q_add[buy_mask] = (action * self.cash_balance / self.prices[:, -1])[buy_mask]
+        q_add[buy_mask] = ((action / self.n_assets) * self.cash_balance / self.prices)[buy_mask]
         q_add[~buy_mask] = (action * self.quantity)[~buy_mask]
 
-        reward = self.cash_balance * self.r
-
         self.quantity += q_add
-        self.cash_balance += -(q_add * self.prices[:, -1]).sum()
-        self.prices = np.hstack([self.prices, self._price_transition(self.prices[:, -1][:, None])])
+        self.cash_balance += -(q_add * self.prices).sum()
+
+        old_assets = self.assets
+        self.assets = self.cash_balance + np.sum(self.quantity * self.prices)
+        done = self.assets < self.MIN_CASH
+
+        self.prices = self._price_transition(self.prices)
 
         return (
-            [self.cash_balance, self.quantity, self.prices],
-            reward,
-            self.cash_balance <= self.MIN_CASH,
+            np.hstack([np.log(self.cash_balance + 1e-4), np.log(self.quantity + 1), np.log(self.prices)]).flatten(),
+            np.log(self.assets + 1e-4) - np.log(old_assets + 1e-4),
+            done,
             {}
         )
 
     def _reset(self):
         self.cash_balance = self.starting_balance
-        self.prices = np.random.uniform(5, 10, size=(self.n_assets, 1))
+        self.assets = self.cash_balance
+        self.prices = np.ones((self.n_assets, ))
         self.quantity = np.zeros((self.n_assets, ))
         self.e = np.zeros_like(self.quantity)
 
-        return [self.cash_balance, self.quantity, self.prices]
+        return np.hstack([np.log(self.cash_balance), np.log(self.quantity + 1), np.log(self.prices)])
 
     def _seed(self, seed=None):
         if seed:
             np.random.seed(seed)
-
-    def _render(self, mode='human', close=False):
-        super(TradeEnv, self)._render(mode, close)
-
-
-
-

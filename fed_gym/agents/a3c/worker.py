@@ -94,7 +94,7 @@ class Worker(object):
         self.history = []
         self.seq_lengths = None
 
-    def run(self, sess, coord, t_max, always_bootstrap=False):
+    def run(self, sess, coord, t_max, always_bootstrap=False, max_seq_length=5):
         with sess.as_default(), sess.graph.as_default():
             # Initial state
             self.state = self.env.reset()
@@ -114,7 +114,8 @@ class Worker(object):
                         return
 
                     # Update the global networks
-                    self.update(transitions, sess, always_bootstrap=always_bootstrap)
+                    self.update(transitions, sess, always_bootstrap=always_bootstrap, max_seq_length=max_seq_length)
+                    self.history = self.history[-(2 * t_max):]
 
             except tf.errors.CancelledError:
                 return
@@ -140,7 +141,7 @@ class Worker(object):
         raise NotImplementedError
 
     @staticmethod
-    def get_random_action(mu, sigma):
+    def get_random_action(mu, sigma, n_actions):
         raise NotImplementedError
 
     def run_n_steps(self, n, sess):
@@ -150,7 +151,7 @@ class Worker(object):
             action_mu, action_sigma = self._policy_net_predict(
                 self.state, self.get_temporal_states(self.history), sess
             )
-            action = self.get_random_action(action_mu, action_sigma)
+            action = self.get_random_action(action_mu, action_sigma, self.policy_net.num_actions)
             next_state, reward, done, _ = self.env.step(action)
 
             # Store transition
@@ -176,7 +177,7 @@ class Worker(object):
 
         return transitions, local_t, global_t
 
-    def update(self, transitions, sess, always_bootstrap=False):
+    def update(self, transitions, sess, always_bootstrap=False, max_seq_length=5):
         """
         Updates global policy and value networks based on collected experience
 
@@ -213,7 +214,7 @@ class Worker(object):
             value_targets.append(reward)
 
         temporal_state_matrix = tf.keras.preprocessing.sequence.pad_sequences(
-            temporal_states, dtype='float32', padding='post'
+            temporal_states, dtype='float32', padding='post', maxlen=max_seq_length
         )
 
         feed_dict = {
@@ -264,7 +265,7 @@ class SolowWorker(Worker):
         return np.array(history)[:, 1][:, None]
 
     @staticmethod
-    def get_random_action(mu, sigma):
+    def get_random_action(mu, sigma, n_actions):
         raw_action = np.random.normal(mu, sigma)[0]
         return SolowWorker.transform_raw_action(raw_action)
 
@@ -275,3 +276,22 @@ class SolowWorker(Worker):
     @staticmethod
     def untransform_action(savings_rate):
         return np.log(savings_rate / (1 - savings_rate))
+
+
+class TradeWorker(Worker):
+    @staticmethod
+    def get_temporal_states(history):
+        return np.vstack(history)
+
+    @staticmethod
+    def get_random_action(mu, sigma, n_actions):
+        raw_action = np.random.normal(mu, sigma, size=(n_actions, )).flatten()
+        return TradeWorker.transform_raw_action(raw_action)
+
+    @staticmethod
+    def transform_raw_action(raw_action):
+        return np.tanh(raw_action)
+
+    @staticmethod
+    def untransform_action(transformed_action):
+        return np.arctanh(transformed_action)

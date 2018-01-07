@@ -10,26 +10,42 @@ class TradingEnvTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         super(TradingEnvTests, cls).setUpClass()
-        cls.env = fed_env.TradeEnv()
+        cls.STD_P = 0.05
+        cls.env = fed_env.TradeAR1Env(std_p=cls.STD_P)
 
     def deplete_test(self):
         self.env.reset()
 
         for _ in xrange(100):
-            (cash, quantity, price_history), reward, done, _ = self.env.step(np.array([0.1, 0.1]))
+            state, reward, done, _ = self.env.step(np.array([0.1, 0.1]))
 
-        self.assertTrue(done)
-        self.assertLessEqual(cash, self.env.MIN_CASH)
-        np.testing.assert_array_less(0, quantity)
-        np.testing.assert_array_less(0, price_history)
+        log_cash = state[0]
+        log_quantity_plus_1 = state[1:3]
+
+        self.assertEqual(done, False)
+        self.assertLessEqual(np.exp(log_cash), self.env.MIN_CASH)
+        np.testing.assert_array_less(0, np.exp(log_quantity_plus_1) - 1)
 
     def buysell_test(self):
         self.env.reset()
 
         self.env.step(np.array([0.1, 0.1]))
-        (cash, quantity, price), reward, done, _ = self.env.step(np.array([-1., -1.]))
+        state, reward, done, _ = self.env.step(np.array([-1., -1.]))
 
-        np.testing.assert_array_almost_equal(0, quantity)
+        log_quantity_plus_1 = state[1:3]
+
+        np.testing.assert_array_almost_equal(0, np.exp(log_quantity_plus_1) - 1)
+
+    def prices_test(self):
+        self.env.reset()
+
+        p = []
+        for _ in xrange(100):
+            state, reward, done, _ = self.env.step(np.array([0.0, 0.0]))
+            prices = np.exp(state[3:5])
+            p.append(prices)
+
+        np.testing.assert_array_less(np.std(p, axis=0), self.STD_P * 2)
 
 
 class SolowEnvTests(unittest.TestCase):

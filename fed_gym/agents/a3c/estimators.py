@@ -99,6 +99,7 @@ class GaussianPolicyEstimator():
             tf.summary.histogram('advantages', self.advantages)
             tf.summary.histogram('actions', self.actions)
             tf.summary.histogram('sigmoid_actions', tf.nn.sigmoid(self.actions))
+            tf.summary.histogram('tanh_actions', tf.nn.tanh(self.actions))
             tf.summary.histogram('mu', mu)
             tf.summary.histogram('sigma', sigma)
 
@@ -132,7 +133,7 @@ class ValueEstimator():
         train ops would set this to false.
     """
 
-    def __init__(self, static_size, temporal_size, shared_layer, static_hidden_size=64, reuse=False, trainable=True, learning_rate=1e-3):
+    def __init__(self, static_size, temporal_size, shared_layer, static_hidden_size=64, reuse=False, trainable=True, learning_rate=1e-3, num_actions=2):
 
         self.static_size = static_size
         self.temporal_size = temporal_size
@@ -155,7 +156,7 @@ class ValueEstimator():
             self.logits = tf.contrib.layers.fully_connected(
                 inputs=dense_output,
                 num_outputs=1,
-                activation_fn=tf.nn.softplus
+                activation_fn=None
             )
             self.logits = tf.squeeze(self.logits, squeeze_dims=[1], name="logits")
 
@@ -175,8 +176,10 @@ class ValueEstimator():
             tf.summary.scalar("{}/reward_max".format(prefix), tf.reduce_max(self.targets))
             tf.summary.scalar("{}/reward_min".format(prefix), tf.reduce_min(self.targets))
             tf.summary.scalar("{}/reward_mean".format(prefix), tf.reduce_mean(self.targets))
-            tf.summary.histogram("{}/capital".format(prefix), tf.exp(self.states[:, 0]))
-            tf.summary.histogram("{}/innovation".format(prefix), self.states[:, 1])
+            tf.summary.histogram("{}/capital".format(prefix), tf.exp(self.states[:, 0]) - 1)
+            for idx in xrange(num_actions):
+                tf.summary.histogram("{}/quantity_{}".format(prefix, idx), tf.exp(self.states[:, 1 + idx]) - 1)
+                tf.summary.histogram("{}/prices_{}".format(prefix, idx), tf.exp(self.states[:, 1 + num_actions + idx]))
             tf.summary.histogram("{}/reward_targets".format(prefix), self.targets)
             tf.summary.histogram("{}/values".format(prefix), self.logits)
 
