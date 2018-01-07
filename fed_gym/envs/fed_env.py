@@ -1,7 +1,85 @@
+
 import numpy as np
 
 import gym
 from gym import spaces
+from data import sampler
+
+
+class TickerEnv(gym.Env):
+    BUY_IDX = 1
+    SELL_IDX = 2
+
+    def __init__(self, starting_balance=10.):
+        super(TickerEnv, self).__init__()
+
+        self.MIN_CASH = 1.
+
+        self.starting_balance = starting_balance
+
+        self.cash_balance = None
+        self.price = None
+        self.assets = None
+        self.quantity = None
+
+        self.data = sampler.OpenCloseSampler(ticker='IEF')
+        self.data_idx = None
+
+        self.observation_space = spaces.Tuple(
+            [
+                spaces.Discrete(3),
+                spaces.Box(0., 1, shape=1),
+            ]
+        )
+
+    def _step(self, action):
+
+        discrete_choice = action[0]
+        continuous_choice = action[1]
+        if discrete_choice == 0:
+            q_add = 0
+        else:
+            if discrete_choice == 1:
+                q_add = (continuous_choice * self.cash_balance / self.price)
+            elif discrete_choice == 2:
+                q_add = - continuous_choice * self.quantity
+            else:
+                raise ValueError('Valid choices are [0, 1, 2]')
+
+        self.quantity += q_add
+        self.cash_balance += -(q_add * self.price).sum()
+
+        old_assets = self.assets
+        self.assets = self.cash_balance + np.sum(self.quantity * self.price)
+        done = self.assets < self.MIN_CASH
+
+        self.data_idx += 1
+        self.price = self.price_vol_data[self.data_idx, 0]
+        self.volume = self.price_vol_data[self.data_idx, 1]
+
+        return (
+            np.hstack([self.cash_balance, self.quantity, self.price, self.volume]).flatten(),
+            np.log(self.assets + 1e-4) - np.log(old_assets + 1e-4),
+            done,
+            {}
+        )
+
+    def _reset(self):
+        self.cash_balance = self.starting_balance
+        self.assets = self.cash_balance
+        self.price_vol_data = self.data.sample(1024)
+
+        self.data_idx = 0
+        self.price = self.price_vol_data[self.data_idx, 0]
+        self.volume = self.price_vol_data[self.data_idx, 1]
+
+        self.quantity = 0.
+
+        return np.hstack([self.cash_balance, self.quantity, self.price, self.volume])
+
+    def _seed(self, seed=None):
+        if seed:
+            np.random.seed(seed)
 
 
 class SolowEnv(gym.Env):

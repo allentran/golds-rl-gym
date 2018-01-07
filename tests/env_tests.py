@@ -5,6 +5,37 @@ import numpy as np
 from fed_gym.envs import fed_env
 
 
+class TickerEnvTests(unittest.TestCase):
+
+    @classmethod
+    def setUpClass(cls):
+        super(TickerEnvTests, cls).setUpClass()
+        cls.env = fed_env.TickerEnv()
+
+    def deplete_test(self):
+        self.env.reset()
+
+        for _ in xrange(100):
+            state, reward, done, _ = self.env.step([self.env.BUY_IDX, 0.1])
+
+        cash = state[0]
+        quantity = state[1]
+
+        self.assertEqual(done, False)
+        self.assertLessEqual(cash, self.env.MIN_CASH)
+        np.testing.assert_array_less(0, quantity)
+
+    def buysell_test(self):
+        self.env.reset()
+
+        self.env.step(np.array([1, 0.1]))
+        state, reward, done, _ = self.env.step(np.array([2., 1.]))
+
+        quantity = state[1]
+
+        np.testing.assert_array_almost_equal(0, quantity)
+
+
 class TradingEnvTests(unittest.TestCase):
 
     @classmethod
