@@ -1,9 +1,11 @@
 import itertools
 import collections
+import math
+
 import numpy as np
 import tensorflow as tf
 
-from estimators import ValueEstimator, GaussianPolicyEstimator
+from estimators import ValueEstimator, GaussianPolicyEstimator, DiscreteAndContPolicyEstimator
 
 Transition = collections.namedtuple(
     "Transition",
@@ -92,7 +94,6 @@ class Worker(object):
 
         self.state = None
         self.history = []
-        self.seq_lengths = None
 
     def run(self, sess, coord, t_max, always_bootstrap=False, max_seq_length=5):
         with sess.as_default(), sess.graph.as_default():
@@ -251,11 +252,11 @@ class Worker(object):
         return pnet_loss, vnet_loss, pnet_summaries, vnet_summaries
 
     @staticmethod
-    def transform_raw_action(raw_action):
+    def transform_raw_action(*raw_actions):
         raise NotImplementedError
 
     @staticmethod
-    def untransform_action(transformed_action):
+    def untransform_action(*transformed_actions):
         raise NotImplementedError
 
     @staticmethod
@@ -279,12 +280,12 @@ class SolowWorker(Worker):
         return SolowWorker.transform_raw_action(raw_action)
 
     @staticmethod
-    def transform_raw_action(raw_action):
-        return 1 / (1 + np.exp(-raw_action))
+    def transform_raw_action(*raw_actions):
+        return 1 / (1 + np.exp(-raw_actions[0]))
 
     @staticmethod
-    def untransform_action(savings_rate):
-        return np.log(savings_rate / (1 - savings_rate))
+    def untransform_action(*savings_rates):
+        return np.log(savings_rates[0] / (1 - savings_rates[0]))
 
 
 class TradeWorker(Worker):
@@ -312,9 +313,200 @@ class TradeWorker(Worker):
         return TradeWorker.transform_raw_action(raw_action)
 
     @staticmethod
-    def transform_raw_action(raw_action):
-        return np.tanh(raw_action)
+    def transform_raw_action(*raw_actions):
+        return np.tanh(raw_actions[0])
 
     @staticmethod
-    def untransform_action(transformed_action):
-        return np.arctanh(transformed_action)
+    def untransform_action(*transformed_actions):
+        return np.arctanh(transformed_actions[0])
+
+
+class TickerGatedTraderWorker(Worker):
+
+    def __init__(self, name, env, policy_net, value_net, shared_layer, global_counter, discount_factor=0.99, summary_writer=None, max_global_steps=None):
+        self.name = name
+        self.discount_factor = discount_factor
+        self.max_global_steps = max_global_steps
+        self.global_step = tf.train.get_global_step()
+        self.global_policy_net = policy_net
+        self.global_value_net = value_net
+        self.global_counter = global_counter
+        self.local_counter = itertools.count()
+        self.summary_writer = summary_writer
+        self.env = env
+
+        # Create local policy/value nets that are not updated asynchronously
+        with tf.variable_scope(name):
+            self.policy_net = DiscreteAndContPolicyEstimator(
+                policy_net.num_actions, static_size=policy_net.static_size, temporal_size=policy_net.temporal_size,
+                shared_layer=shared_layer
+            )
+            self.value_net = ValueEstimator(
+                static_size=policy_net.static_size, temporal_size=policy_net.temporal_size,
+                shared_layer=shared_layer,
+            )
+
+        # Op to copy params from global policy/valuenets
+        self.copy_params_op = make_copy_params_op(
+            tf.contrib.slim.get_variables(scope="global", collection=tf.GraphKeys.TRAINABLE_VARIABLES),
+            tf.contrib.slim.get_variables(scope=self.name+'/', collection=tf.GraphKeys.TRAINABLE_VARIABLES)
+        )
+
+        self.vnet_train_op = make_train_op(self.value_net, self.global_value_net)
+        self.pnet_train_op = make_train_op(self.policy_net, self.global_policy_net)
+
+        self.state = None
+        self.history = []
+
+    @staticmethod
+    def process_state(raw_state):
+        cash = raw_state[0]
+        quantity = raw_state[1]
+        price = raw_state[2]
+        volume = raw_state[3]
+
+        return np.array(
+            [
+                np.log(cash + 1e-4),
+                np.log(quantity + 1),
+                np.log(price),
+                volume,
+            ]
+        ).flatten()
+
+    @staticmethod
+    def get_temporal_states(history):
+        return np.vstack(history)[:, 2:]
+
+    @staticmethod
+    def get_random_action(mu, sigma, probs):
+        discrete_action_idx = np.random.choice([0, 1, 2], p=probs)
+        raw_action = np.random.normal(mu[discrete_action_idx], sigma[discrete_action_idx])
+        return discrete_action_idx, TickerGatedTraderWorker.transform_raw_action(discrete_action_idx, raw_action)[1]
+
+    @staticmethod
+    def transform_raw_action(*actions):
+        discrete_action = np.zeros((1, 3)).astype('float32')
+        discrete_action[0, actions[0]] = 1.
+        return discrete_action, 1 / (1 + np.exp(-actions[1]))
+
+    @staticmethod
+    def untransform_action(*actions):
+        return np.log(actions[0] / (1 - actions[0]))
+
+    def run_n_steps(self, n, sess):
+        transitions = []
+        for _ in xrange(n):
+            # Take a step
+            action_mu, action_sigma, probs = self._policy_net_predict(
+                self.state, self.get_temporal_states(self.history), sess
+            )
+            actions = self.get_random_action(action_mu, action_sigma, probs)
+            next_state, reward, done, _ = self.env.step(actions)
+
+            # Store transition
+            transitions.append(Transition(
+                state=self.state,
+                action=actions,
+                reward=reward,
+                next_state=next_state,
+                done=done)
+            )
+
+            # Increase local and global counters
+            local_t = next(self.local_counter)
+            global_t = next(self.global_counter)
+
+            if done:
+                self.state = self.env.reset()
+                self.history.append(self.process_state(self.state))
+                break
+            else:
+                self.state = next_state
+                self.history.append(self.process_state(next_state))
+
+        return transitions, local_t, global_t
+
+    def _policy_net_predict(self, state, history, sess):
+        feed_dict = {
+            self.policy_net.states: [state],
+            self.policy_net.history: [history],
+        }
+        preds = sess.run(self.policy_net.predictions, feed_dict)
+        return preds["mu"][0], preds["sigma"][0], preds['probs'][0]
+
+    def update(self, transitions, sess, always_bootstrap=False, max_seq_length=5):
+        """
+        Updates global policy and value networks based on collected experience
+
+        Args:
+          transitions: A list of experience transitions
+          sess: A Tensorflow session
+        """
+
+        # If we episode was not done we bootstrap the value from the last state
+        reward = 0.0
+        history = self.history
+        if not transitions[-1].done or always_bootstrap:
+            state = transitions[-1].next_state
+            processed_state = self.process_state(state)
+            reward = self._value_net_predict(processed_state, self.get_temporal_states(history), sess)
+
+        # Accumulate minibatch exmaples
+        states = []
+        policy_advantages = []
+        value_targets = []
+        transformed_cont_actions = []
+        discrete_actions = []
+        temporal_states = []
+        history = np.vstack(history)
+
+        for idx, transition in enumerate(transitions[::-1]):
+            reward = transition.reward + self.discount_factor * reward
+            processed_state = self.process_state(transition.state)
+            history_t = history[:-(idx + 1)]
+            policy_advantage = reward - self._value_net_predict(processed_state, self.get_temporal_states(history_t), sess)
+            # Accumulate updates
+            temporal_states.append(self.get_temporal_states(history_t))
+            states.append(processed_state)
+            discrete_actions.append(transition.action[0])
+            transformed_cont_actions.append(transition.action[1])
+            policy_advantages.append(policy_advantage)
+            value_targets.append(reward)
+
+        temporal_state_matrix = tf.keras.preprocessing.sequence.pad_sequences(
+            temporal_states, dtype='float32', padding='post', maxlen=max_seq_length
+        )
+
+        feed_dict = {
+            self.policy_net.states: np.array(states),
+            self.policy_net.history: temporal_state_matrix,
+            self.policy_net.advantages: policy_advantages,
+            self.policy_net.discrete_actions: tf.keras.utils.to_categorical(discrete_actions),
+            self.policy_net.actions: self.untransform_action(np.array(transformed_cont_actions)).flatten(),
+            self.value_net.states: np.array(states),
+            self.value_net.history: temporal_state_matrix,
+            self.value_net.targets: value_targets,
+        }
+
+        # Train the global estimators using local gradients
+        global_step, pnet_loss, vnet_loss, _, _, pnet_summaries, vnet_summaries = sess.run(
+            [
+                self.global_step,
+                self.policy_net.loss,
+                self.value_net.loss,
+                self.pnet_train_op,
+                self.vnet_train_op,
+                self.policy_net.summaries,
+                self.value_net.summaries
+            ],
+            feed_dict
+        )
+
+        # Write summaries
+        if self.summary_writer is not None:
+            self.summary_writer.add_summary(pnet_summaries, global_step)
+            self.summary_writer.add_summary(vnet_summaries, global_step)
+            self.summary_writer.flush()
+
+        return pnet_loss, vnet_loss, pnet_summaries, vnet_summaries

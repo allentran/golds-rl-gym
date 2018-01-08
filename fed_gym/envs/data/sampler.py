@@ -19,6 +19,7 @@ class OpenCloseSampler(object):
 
         joined = np.hstack([opens, closes]).flatten()
         vol = np.hstack([vol, vol]).flatten()
+        vol = np.log(vol) - np.log(vol[0])
         data = np.hstack([joined[:, None], vol[:, None]])
 
         assert data[1, 0] == open_close_data[close_col].iloc[0]
