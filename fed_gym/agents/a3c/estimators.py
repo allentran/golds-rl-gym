@@ -49,22 +49,22 @@ class DiscreteAndContPolicyEstimator():
         Actor threads that don't update their local models and don't need
         train ops would set this to false.
     """
-
+    num_actions = 3
     BUY_IDX = 1
     SELL_IDX = 2
 
-    def __init__(self, num_discrete, static_size, temporal_size, shared_layer, static_hidden_size=64, reuse=False, trainable=True, learning_rate=1e-4):
+    def __init__(self, num_assets, static_size, temporal_size, shared_layer, static_hidden_size=64, trainable=True, learning_rate=1e-4):
 
         self.states = tf.placeholder(shape=(None, static_size), dtype=tf.float32, name="X")
         self.history = tf.placeholder(shape=(None, None, temporal_size), dtype=tf.float32, name="X_t")
         self.advantages = tf.placeholder(shape=(None,), dtype=tf.float32, name='advantages')
+        self.batch_size = tf.placeholder(tf.int32, name='batch_size')
 
-        # binary one-hot float32 for actions
-        self.discrete_actions = tf.placeholder(shape=(None, num_discrete), dtype=tf.float32, name="discrete_actions")
+        self.discrete_actions = tf.placeholder(shape=(None, num_assets), dtype=tf.int32, name="discrete_actions")
         # Note: if actions are transformed, they should be provided in the untransformed shape (i.e N(mu, sig^2) space)
-        self.actions = tf.placeholder(shape=(None, ), dtype=tf.float32, name="cont_actions")
+        self.actions = tf.placeholder(shape=(None, num_assets), dtype=tf.float32, name="cont_actions")
 
-        self.num_actions = num_discrete
+        self.num_assets = num_assets
         self.static_size = static_size
         self.temporal_size = temporal_size
 
@@ -80,14 +80,19 @@ class DiscreteAndContPolicyEstimator():
 
             class_hidden = tf.contrib.layers.fully_connected(dense_output, static_hidden_size * 2)
             class_hidden = tf.contrib.layers.fully_connected(class_hidden, static_hidden_size)
-            discrete_probs = tf.contrib.layers.fully_connected(class_hidden, num_discrete, activation_fn=tf.nn.softmax)
+            discrete_logits = tf.contrib.layers.fully_connected(
+                class_hidden, num_assets * self.num_actions, activation_fn=None
+            )
+            discrete_probs = tf.nn.softmax(tf.reshape(discrete_logits, (-1, num_assets, self.num_actions)))
 
             normal_params = tf.contrib.layers.fully_connected(dense_output, static_hidden_size * 2)
             normal_params = tf.contrib.layers.fully_connected(normal_params, static_hidden_size)
-            normal_params = tf.contrib.layers.fully_connected(normal_params, num_discrete * 2, activation_fn=None)
-            normal_params = tf.reshape(normal_params, [-1, num_discrete, 2])
-            mu = normal_params[:, :, 0]
-            sigma = tf.nn.softplus(normal_params[:, :, 1]) + keras.backend.epsilon()
+            normal_params = tf.contrib.layers.fully_connected(
+                normal_params, num_assets * self.num_actions * 2, activation_fn=None
+            )
+            normal_params = tf.reshape(normal_params, [-1, self.num_assets, self.num_actions, 2])
+            mu = normal_params[:, :, :, 0]
+            sigma = tf.nn.softplus(normal_params[:, :, :, 1]) + keras.backend.epsilon()
 
             self.predictions = {
                 "mu": mu,
@@ -99,9 +104,11 @@ class DiscreteAndContPolicyEstimator():
             cont_entropy = tf.reduce_mean(0.5 * (tf.log(2 * math.pi * tf.square(sigma) + keras.backend.epsilon()) + 1), axis=-1)
             self.entropy_mean = tf.reduce_mean(cont_entropy + discrete_entropy, name="entropy_mean")
 
-            action_probs = tf.reduce_sum(discrete_probs * self.discrete_actions, axis=-1)
-            mu_action = tf.reduce_sum(mu * self.discrete_actions, axis=-1)
-            sig_action = tf.reduce_sum(sigma * self.discrete_actions, axis=-1)
+            one_hot_actions = tf.one_hot(self.discrete_actions, depth=self.num_actions, dtype=tf.float32)
+
+            action_probs = tf.reduce_sum(one_hot_actions * discrete_probs, axis=-1)
+            mu_action = tf.reduce_sum(mu * one_hot_actions, axis=-1)
+            sig_action = tf.reduce_sum(sigma * one_hot_actions, axis=-1)
 
             nll_discrete = - tf.log(action_probs)
             nll_cont = tf.log(sig_action + keras.backend.epsilon()) + tf.square(self.actions - mu_action) / (2 * tf.square(sig_action))

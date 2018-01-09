@@ -14,18 +14,19 @@ class GatedPolicyEstimatorTest(tf.test.TestCase):
         cls.num_actions = 3
         cls.input_size = 5
         cls.temporal_size = 7
+        cls.n_assets = 4
         cls.T = 10
 
         cls.states = np.random.random((cls.batch_size, cls.input_size))
         cls.temporal_states = np.random.random((cls.batch_size, cls.T, cls.temporal_size))
         cls.advantage = np.random.random((cls.batch_size, )).astype('float32')
-        cls.actions = np.random.random((cls.batch_size, cls.num_actions)).astype('float32')
-        cls.discrete_actions = np.random.randint(0, 3, size=(cls.batch_size, )).astype('int32')
+        cls.actions = np.random.random((cls.batch_size, cls.n_assets)).astype('float32')
+        cls.discrete_actions = np.random.randint(0, 3, size=(cls.batch_size, cls.n_assets)).astype('int32')
 
     def learn_policy_test(self):
 
         estimator = DiscreteAndContPolicyEstimator(
-            self.num_actions, static_size=self.input_size, temporal_size=self.temporal_size,
+            self.n_assets, static_size=self.input_size, temporal_size=self.temporal_size,
             shared_layer=lambda x: rnn_graph_lstm(x, 32, 1, True),
             learning_rate=1e-2
         )
@@ -41,8 +42,8 @@ class GatedPolicyEstimatorTest(tf.test.TestCase):
                     estimator.states: self.states,
                     estimator.history: self.temporal_states,
                     estimator.advantages: np.ones_like(self.advantage),
-                    estimator.actions: self.actions[:, 0],
-                    estimator.discrete_actions: tf.keras.utils.to_categorical(self.discrete_actions, num_classes=3).astype('float32')
+                    estimator.actions: self.actions,
+                    estimator.discrete_actions: self.discrete_actions
                 }
                 pred = sess.run(estimator.predictions, feed_dict)
 
@@ -51,14 +52,21 @@ class GatedPolicyEstimatorTest(tf.test.TestCase):
                 grad_feed_dict = { k: v for k, v in zip(grads, grads_) }
                 _ = sess.run(estimator.train_op, grad_feed_dict)
 
-        prob_optimal_choice = pred['probs'][np.arange(self.batch_size), self.discrete_actions]
-        cont_action_optimal_choice = pred['mu'][np.arange(self.batch_size), self.discrete_actions]
-        np.testing.assert_array_less(0.9, prob_optimal_choice)
-        self.assertLess(np.mean(np.abs((cont_action_optimal_choice - self.actions[:, 0]))), 0.2)
+        def all_idx(idx, axis):
+            grid = np.ogrid[tuple(map(slice, idx.shape))]
+            grid.insert(axis, idx)
+            return tuple(grid)
+
+        # index 3D probs with 2D array of choices
+        prob_optimal_choice = pred['probs'][all_idx(self.discrete_actions, 2)]
+        cont_action_optimal_choice = pred['mu'][all_idx(self.discrete_actions, 2)]
+
+        np.testing.assert_array_less(0.33, prob_optimal_choice)
+        self.assertLess(np.mean(np.abs((cont_action_optimal_choice - self.actions))), 0.2)
 
     def predict_test(self):
         estimator = DiscreteAndContPolicyEstimator(
-            self.num_actions, static_size=self.input_size, temporal_size=self.temporal_size,
+            self.n_assets, static_size=self.input_size, temporal_size=self.temporal_size,
             shared_layer=lambda x: rnn_graph_lstm(x, 32, 1, True)
         )
 
@@ -74,8 +82,8 @@ class GatedPolicyEstimatorTest(tf.test.TestCase):
                     estimator.states: self.states,
                     estimator.history: self.temporal_states,
                     estimator.advantages: self.advantage,
-                    estimator.actions: self.actions[:, 0],
-                    estimator.discrete_actions: tf.keras.utils.to_categorical(self.discrete_actions, num_classes=3).astype('float32')
+                    estimator.actions: self.actions,
+                    estimator.discrete_actions: self.discrete_actions
                 }
                 loss = sess.run(estimator.loss, feed_dict)
                 losses.append(loss)
@@ -90,9 +98,12 @@ class GatedPolicyEstimatorTest(tf.test.TestCase):
             self.assertLess(losses[-1], losses[0])
             np.testing.assert_array_less(0., pred['sigma'])
             self.assertEqual(pred['probs'].shape[0], self.batch_size)
-            self.assertEqual(pred['probs'].shape[1], self.num_actions)
-            self.assertEqual(pred['mu'].shape[1], self.num_actions)
-            self.assertEqual(pred['sigma'].shape[1], self.num_actions)
+            self.assertEqual(pred['probs'].shape[1], self.n_assets)
+            self.assertEqual(pred['probs'].shape[2], self.num_actions)
+            self.assertEqual(pred['mu'].shape[1], self.n_assets)
+            self.assertEqual(pred['mu'].shape[2], self.num_actions)
+            self.assertEqual(pred['sigma'].shape[1], self.n_assets)
+            self.assertEqual(pred['sigma'].shape[2], self.num_actions)
 
 
 class PolicyEstimatorTest(tf.test.TestCase):
