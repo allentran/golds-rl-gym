@@ -140,14 +140,25 @@ class SolowEnv(gym.Env):
     Classic Solow model (no growth or pop growth) with log consumption utility
     States are histories of capital and tech innovation/shock
     """
-    def __init__(self, delta=0.02, sigma=0.1):
+    def __init__(self, delta=0.02, sigma=0.1, p=1, q=1):
         super(SolowEnv, self).__init__()
 
         self.delta = delta
         self.sigma = sigma
-        self.rho = 0.95
         self.alpha = 0.33
 
+        self.p = p
+        self.q = q
+        if self.p > 0:
+            self.rho_z = 0.95 ** np.arange(1, p + 1)
+        else:
+            self.rho_z = 0.95
+        if self.q > 0:
+            self.rho_e = 0.5 ** np.arange(1, q + 1)
+        else:
+            self.rho_e = 0.5
+
+        self.e = None
         self.z = None
         self.k = None
 
@@ -160,14 +171,23 @@ class SolowEnv(gym.Env):
         return (savings / self.delta) ** (1 / (1 - self.alpha))
 
     def _step(self, s):
-        y_t = np.exp(self.z) * (self.k ** self.alpha)
-        z_next = self.rho * self.z + np.random.normal(0, self.sigma)
+        y_t = np.exp(self.z[-1]) * (self.k ** self.alpha)
         k_next = self._k_transition(self.k, y_t, s)
 
-        self.z = z_next
+        e_t = np.random.normal(0, self.sigma)
+        z_next = self.rho_z * self.z + self.rho_e * self.e + e_t
+
+        if self.p > 0:
+            self.z = np.array(self.z[1:].tolist() + [z_next])
+        else:
+            self.z = np.array([z_next])
+        if self.q > 0:
+            self.e = np.array(self.e[1:].tolist() + [e_t])
+        else:
+            self.e = np.array([e_t])
         self.k = k_next
 
-        state = np.array([self.k, self.z]).flatten()
+        state = np.array([self.k, z_next]).flatten()
 
         return (
             state,
@@ -178,18 +198,20 @@ class SolowEnv(gym.Env):
 
     def _reset(self):
         self.k = self._k_ss(np.random.uniform(0.05, 0.9))
-        self.z = np.random.uniform(-1e-2, 1e-2)
+        self.z = np.zeros(shape=(self.p, ))
+        self.e = np.zeros(shape=(self.q, ))
 
-        return np.array([self.k, self.z]).flatten()
+        return np.array([self.k, self.z[-1]]).flatten()
 
 
 class SolowSSEnv(SolowEnv):
     def __init__(self, delta=0.02, sigma=0.02):
-        super(SolowSSEnv, self).__init__(delta, sigma)
+        super(SolowSSEnv, self).__init__(delta, sigma, p=1, q=0)
 
     def _reset(self):
         self.k = self._k_ss(self.alpha)
-        self.z = np.random.uniform(-1e-2, 1e-2)
+        self.z = np.array([np.random.uniform(-1e-2, 1e-2)])
+        self.e = 0.
 
         return np.array([self.k, self.z]).flatten()
 
