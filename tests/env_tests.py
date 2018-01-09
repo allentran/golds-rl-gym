@@ -10,16 +10,19 @@ class TickerEnvTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         super(TickerEnvTests, cls).setUpClass()
-        cls.env = fed_env.TickerEnv()
+        cls.n_assets = 7
+        cls.env = fed_env.TickerEnvForTests(n_assets=cls.n_assets)
 
     def deplete_test(self):
         self.env.reset()
 
         for _ in xrange(100):
-            state, reward, done, _ = self.env.step([self.env.BUY_IDX, 0.1])
+            state, reward, done, _ = self.env.step(
+                [np.array([self.env.BUY_IDX] * self.n_assets), np.array([0.1] * self.n_assets)]
+            )
 
         cash = state[0]
-        quantity = state[1]
+        quantity = state[1: 1 + self.n_assets]
 
         self.assertEqual(done, False)
         self.assertLessEqual(cash, self.env.MIN_CASH)
@@ -28,11 +31,14 @@ class TickerEnvTests(unittest.TestCase):
     def buysell_test(self):
         self.env.reset()
 
-        self.env.step(np.array([1, 0.1]))
-        state, reward, done, _ = self.env.step(np.array([2., 1.]))
+        self.env.step(
+            [np.array([self.env.BUY_IDX] * self.n_assets), np.array([0.1] * self.n_assets)]
+        )
+        state, reward, done, _ = self.env.step(
+            [np.array([self.env.SELL_IDX] * self.n_assets), np.array([1.] * self.n_assets)]
+        )
 
-        quantity = state[1]
-
+        quantity = state[1: 1 + self.n_assets]
         np.testing.assert_array_almost_equal(0, quantity)
 
 

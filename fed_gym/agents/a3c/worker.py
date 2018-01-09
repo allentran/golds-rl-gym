@@ -260,7 +260,7 @@ class Worker(object):
         raise NotImplementedError
 
     @staticmethod
-    def process_state(raw_state):
+    def process_state(raw_state, **kwargs):
         return raw_state
 
 
@@ -334,11 +334,12 @@ class TickerGatedTraderWorker(Worker):
         self.local_counter = itertools.count()
         self.summary_writer = summary_writer
         self.env = env
+        self.n_assets = policy_net.num_assets
 
         # Create local policy/value nets that are not updated asynchronously
         with tf.variable_scope(name):
             self.policy_net = DiscreteAndContPolicyEstimator(
-                policy_net.num_actions, static_size=policy_net.static_size, temporal_size=policy_net.temporal_size,
+                policy_net.num_assets, static_size=policy_net.static_size, temporal_size=policy_net.temporal_size,
                 shared_layer=shared_layer
             )
             self.value_net = ValueEstimator(
@@ -359,36 +360,46 @@ class TickerGatedTraderWorker(Worker):
         self.history = []
 
     @staticmethod
-    def process_state(raw_state):
+    def process_state(raw_state, **kwargs):
         cash = raw_state[0]
-        quantity = raw_state[1]
-        price = raw_state[2]
-        volume = raw_state[3]
+        n_assets = kwargs['n_assets']
+        quantities = raw_state[1: 1 + n_assets]
+        prices = raw_state[1 + n_assets: -n_assets]
+        volumes = raw_state[-n_assets:]
 
-        return np.array(
-            [
-                np.log(cash + 1e-4),
-                np.log(quantity + 1),
-                np.log(price),
-                volume,
-            ]
-        ).flatten()
+        state = [np.log(cash + 1e-4)]
+        for idx in xrange(n_assets):
+            state.append(np.log(quantities[idx] + 1))
+        for idx in xrange(n_assets):
+            state.append(np.log(prices[idx]))
+        for idx in xrange(n_assets):
+            state.append(volumes[idx])
+        return np.array(state).flatten()
 
     @staticmethod
-    def get_temporal_states(history):
-        return np.vstack(history)[:, 2:]
+    def get_temporal_states(history, **kwargs):
+        n_assets = kwargs['n_assets']
+        return np.vstack(history)[:, 1 + n_assets:]
+
+    @staticmethod
+    def vectorized(prob_matrix, items):
+        s = prob_matrix.cumsum(axis=1)
+        r = np.random.rand(prob_matrix.shape[0])[:, None]
+        k = (s < r).sum(axis=1)
+        return items[k]
 
     @staticmethod
     def get_random_action(mu, sigma, probs):
-        discrete_action_idx = np.random.choice([0, 1, 2], p=probs)
-        raw_action = np.random.normal(mu[discrete_action_idx], sigma[discrete_action_idx])
-        return discrete_action_idx, TickerGatedTraderWorker.transform_raw_action(discrete_action_idx, raw_action)[1]
+        discrete_action_idx = TickerGatedTraderWorker.vectorized(probs, np.arange(3))
+        mu_action = mu[np.arange(len(discrete_action_idx)), discrete_action_idx].flatten()
+        sig_action = sigma[np.arange(len(discrete_action_idx)), discrete_action_idx].flatten()
+        n_assets = mu.shape[0]
+        raw_action = mu_action + sig_action * np.random.normal(size=(n_assets, ))
+        return discrete_action_idx, TickerGatedTraderWorker.transform_raw_action(raw_action)
 
     @staticmethod
     def transform_raw_action(*actions):
-        discrete_action = np.zeros((1, 3)).astype('float32')
-        discrete_action[0, actions[0]] = 1.
-        return discrete_action, 1 / (1 + np.exp(-actions[1]))
+        return 1 / (1 + np.exp(-actions[0]))
 
     @staticmethod
     def untransform_action(*actions):
@@ -399,7 +410,7 @@ class TickerGatedTraderWorker(Worker):
         for _ in xrange(n):
             # Take a step
             action_mu, action_sigma, probs = self._policy_net_predict(
-                self.state, self.get_temporal_states(self.history), sess
+                self.state, self.get_temporal_states(self.history, n_assets=self.n_assets), sess
             )
             actions = self.get_random_action(action_mu, action_sigma, probs)
             next_state, reward, done, _ = self.env.step(actions)
@@ -419,11 +430,11 @@ class TickerGatedTraderWorker(Worker):
 
             if done:
                 self.state = self.env.reset()
-                self.history.append(self.process_state(self.state))
+                self.history.append(self.process_state(self.state, n_assets=self.n_assets))
                 break
             else:
                 self.state = next_state
-                self.history.append(self.process_state(next_state))
+                self.history.append(self.process_state(next_state, n_assets=self.n_assets))
 
         return transitions, local_t, global_t
 
@@ -449,8 +460,10 @@ class TickerGatedTraderWorker(Worker):
         history = self.history
         if not transitions[-1].done or always_bootstrap:
             state = transitions[-1].next_state
-            processed_state = self.process_state(state)
-            reward = self._value_net_predict(processed_state, self.get_temporal_states(history), sess)
+            processed_state = self.process_state(state, n_assets=self.n_assets)
+            reward = self._value_net_predict(
+                processed_state, self.get_temporal_states(history, n_assets=self.n_assets), sess
+            )
 
         # Accumulate minibatch exmaples
         states = []
@@ -463,14 +476,16 @@ class TickerGatedTraderWorker(Worker):
 
         for idx, transition in enumerate(transitions[::-1]):
             reward = transition.reward + self.discount_factor * reward
-            processed_state = self.process_state(transition.state)
+            processed_state = self.process_state(transition.state, n_assets=self.n_assets)
             history_t = history[:-(idx + 1)]
-            policy_advantage = reward - self._value_net_predict(processed_state, self.get_temporal_states(history_t), sess)
+            policy_advantage = reward - self._value_net_predict(
+                processed_state, self.get_temporal_states(history_t, n_assets=self.n_assets), sess
+            )
             # Accumulate updates
-            temporal_states.append(self.get_temporal_states(history_t))
+            temporal_states.append(self.get_temporal_states(history_t, n_assets=self.n_assets))
             states.append(processed_state)
             discrete_actions.append(transition.action[0])
-            transformed_cont_actions.append(transition.action[1])
+            transformed_cont_actions.append(transition.action[1][None, :])
             policy_advantages.append(policy_advantage)
             value_targets.append(reward)
 
@@ -482,8 +497,8 @@ class TickerGatedTraderWorker(Worker):
             self.policy_net.states: np.array(states),
             self.policy_net.history: temporal_state_matrix,
             self.policy_net.advantages: policy_advantages,
-            self.policy_net.discrete_actions: tf.keras.utils.to_categorical(discrete_actions),
-            self.policy_net.actions: self.untransform_action(np.array(transformed_cont_actions)).flatten(),
+            self.policy_net.discrete_actions: discrete_actions,
+            self.policy_net.actions: self.untransform_action(np.vstack(transformed_cont_actions)),
             self.value_net.states: np.array(states),
             self.value_net.history: temporal_state_matrix,
             self.value_net.targets: value_targets,

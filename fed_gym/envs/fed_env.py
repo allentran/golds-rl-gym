@@ -6,59 +6,112 @@ from gym import spaces
 from data import sampler
 
 
+class TickerEnvForTests(gym.Env):
+    BUY_IDX = 1
+    SELL_IDX = 2
+
+    def __init__(self, starting_balance=10., n_assets=2):
+        super(TickerEnvForTests, self).__init__()
+
+        self.MIN_CASH = 1.
+        self.n_assets = n_assets
+        self.starting_balance = starting_balance
+
+        self.cash_balance = None
+        self.prices = None
+        self.assets = None
+        self.quantities = None
+
+    def _step(self, action):
+
+        discrete_choices = action[0]
+        continuous_choices = action[1]
+        assert len(discrete_choices) == len(continuous_choices) == self.n_assets
+        q_add = np.zeros_like(continuous_choices)
+        buy_mask = discrete_choices == self.BUY_IDX
+        sell_mask = discrete_choices == self.SELL_IDX
+
+        continuous_choices[buy_mask] /= max(continuous_choices[buy_mask].sum(), 1)
+
+        q_add[buy_mask] = (continuous_choices * self.cash_balance / self.price)[buy_mask]
+        q_add[sell_mask] = - continuous_choices[sell_mask] * self.quantities[sell_mask]
+
+        self.quantities += q_add
+        self.cash_balance += -(q_add * self.price).sum()
+
+        old_assets = self.assets
+        self.assets = self.cash_balance + np.sum(self.quantities * self.price)
+        done = self.assets < self.MIN_CASH
+
+        self.price = np.random.uniform(1, 2, size=(self.n_assets, ))
+        self.volume = np.random.uniform(1, 2, size=(self.n_assets, ))
+
+        return (
+            np.hstack([self.cash_balance, self.quantities, self.price, self.volume]).flatten(),
+            np.log(self.assets + 1e-4) - np.log(old_assets + 1e-4),
+            done,
+            {}
+        )
+
+    def _reset(self):
+        self.cash_balance = self.starting_balance
+        self.assets = self.cash_balance
+
+        self.price = np.random.uniform(1, 2, size=(self.n_assets, ))
+        self.volume = np.random.uniform(1, 2, size=(self.n_assets, ))
+
+        self.quantities = np.zeros((self.n_assets, ))
+
+        return np.hstack([self.cash_balance, self.quantities, self.price, self.volume])
+
+
 class TickerEnv(gym.Env):
     BUY_IDX = 1
     SELL_IDX = 2
 
-    def __init__(self, starting_balance=10.):
+    def __init__(self, starting_balance=10., inverse_asset=True, n_assets=2):
         super(TickerEnv, self).__init__()
 
         self.MIN_CASH = 1.
 
         self.starting_balance = starting_balance
+        self.n_assets = n_assets
 
         self.cash_balance = None
-        self.price = None
+        self.prices = None
         self.assets = None
-        self.quantity = None
+        self.quantities = None
 
-        self.data = sampler.OpenCloseSampler(ticker='IEF')
+        self.data = sampler.OpenCloseSampler(ticker='IEF', inverse_asset=inverse_asset)
         self.data_idx = None
-
-        self.observation_space = spaces.Tuple(
-            [
-                spaces.Discrete(3),
-                spaces.Box(0., 1, shape=1),
-            ]
-        )
 
     def _step(self, action):
 
-        discrete_choice = action[0]
-        continuous_choice = action[1]
-        if discrete_choice == 0:
-            q_add = 0
-        else:
-            if discrete_choice == 1:
-                q_add = (continuous_choice * self.cash_balance / self.price)
-            elif discrete_choice == 2:
-                q_add = - continuous_choice * self.quantity
-            else:
-                raise ValueError('Valid choices are [0, 1, 2]')
+        discrete_choices = action[0]
+        continuous_choices = action[1]
+        assert len(discrete_choices) == len(continuous_choices) == self.n_assets
+        q_add = np.zeros_like(continuous_choices)
+        buy_mask = discrete_choices == self.BUY_IDX
+        sell_mask = discrete_choices == self.SELL_IDX
 
-        self.quantity += q_add
-        self.cash_balance += -(q_add * self.price).sum()
+        continuous_choices[buy_mask] /= max(continuous_choices[buy_mask].sum(), 1)
+
+        q_add[buy_mask] = (continuous_choices * self.cash_balance / self.prices)[buy_mask]
+        q_add[sell_mask] = - continuous_choices[sell_mask] * self.quantities[sell_mask]
+
+        self.quantities += q_add
+        self.cash_balance += -(q_add * self.prices).sum()
 
         old_assets = self.assets
-        self.assets = self.cash_balance + np.sum(self.quantity * self.price)
+        self.assets = self.cash_balance + np.sum(self.quantities * self.prices)
         done = self.assets < self.MIN_CASH
 
         self.data_idx += 1
-        self.price = self.price_vol_data[self.data_idx, 0]
-        self.volume = self.price_vol_data[self.data_idx, 1]
+        self.prices = self.price_vol_data[self.data_idx, :2]
+        self.volume = self.price_vol_data[self.data_idx, 2:]
 
         return (
-            np.hstack([self.cash_balance, self.quantity, self.price, self.volume]).flatten(),
+            np.hstack([self.cash_balance, self.quantities, self.prices, self.volume]).flatten(),
             np.log(self.assets + 1e-4) - np.log(old_assets + 1e-4),
             done,
             {}
@@ -70,12 +123,12 @@ class TickerEnv(gym.Env):
         self.price_vol_data = self.data.sample(1024)
 
         self.data_idx = 0
-        self.price = self.price_vol_data[self.data_idx, 0]
-        self.volume = self.price_vol_data[self.data_idx, 1]
+        self.prices = self.price_vol_data[self.data_idx, :self.n_assets]
+        self.volume = self.price_vol_data[self.data_idx, self.n_assets:]
 
-        self.quantity = 0.
+        self.quantities = np.zeros(shape=(self.n_assets, ))
 
-        return np.hstack([self.cash_balance, self.quantity, self.price, self.volume])
+        return np.hstack([self.cash_balance, self.quantities, self.prices, self.volume])
 
     def _seed(self, seed=None):
         if seed:

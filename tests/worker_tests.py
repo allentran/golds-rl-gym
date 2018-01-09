@@ -111,14 +111,15 @@ class TickerTraderWorkerTests(tf.test.TestCase):
         self.global_counter = itertools.count()
 
         self.batch_size = 16
+        self.num_assets = 2
         self.num_actions = 3
-        self.input_size = 4
-        self.temporal_size = 2
+        self.input_size = 1 + self.num_assets * 3 # cash + (quantity, price, vol) * n_assets
+        self.temporal_size = self.num_assets * 2
         self.T = 10
 
         with tf.variable_scope("global"):
             self.global_policy_net = DiscreteAndContPolicyEstimator(
-                self.num_actions, static_size=self.input_size, temporal_size=self.temporal_size,
+                self.num_assets, static_size=self.input_size, temporal_size=self.temporal_size,
                 shared_layer=lambda x: rnn_graph_lstm(x, 32, 1, True)
             )
             self.global_value_net = ValueEstimator(
@@ -143,12 +144,12 @@ class TickerTraderWorkerTests(tf.test.TestCase):
 
         with self.test_session() as sess:
             sess.run(tf.global_variables_initializer())
-            state = TickerGatedTraderWorker.process_state(w.env.reset())
-            temporal_state = w.get_temporal_states([state])
+            state = TickerGatedTraderWorker.process_state(w.env.reset(), n_assets=self.num_assets)
+            temporal_state = w.get_temporal_states([state], n_assets=self.num_assets)
             mu, sig, probs = w._policy_net_predict(state.flatten(), temporal_state.reshape((1, self.temporal_size)), sess)
 
-            self.assertEqual(mu.shape, (self.num_actions, ))
-            self.assertEqual(sig.shape, (self.num_actions, ))
+            self.assertEqual(mu.shape, (self.num_assets, 3))
+            self.assertEqual(sig.shape, (self.num_assets, 3))
 
     def value_predict_test(self):
         w = TickerGatedTraderWorker(
@@ -164,7 +165,9 @@ class TickerTraderWorkerTests(tf.test.TestCase):
         with self.test_session() as sess:
             sess.run(tf.global_variables_initializer())
             state = w.env.reset()
-            temporal_state = w.get_temporal_states([TickerGatedTraderWorker.process_state(state)])
+            temporal_state = w.get_temporal_states(
+                [TickerGatedTraderWorker.process_state(state, n_assets=self.num_assets)], n_assets=self.num_assets
+            )
             state_value = w._value_net_predict(state, temporal_state.reshape((1, self.temporal_size)), sess)
             self.assertEqual(state_value.shape, ())
 
@@ -185,7 +188,7 @@ class TickerTraderWorkerTests(tf.test.TestCase):
         with self.test_session() as sess:
             sess.run(tf.global_variables_initializer())
             w.state = w.env.reset()
-            w.history = [TickerGatedTraderWorker.process_state(w.state)]
+            w.history = [TickerGatedTraderWorker.process_state(w.state, n_assets=self.num_assets)]
             transitions, local_t, global_t = w.run_n_steps(n_steps, sess)
             policy_net_loss, value_net_loss, policy_net_summaries, value_net_summaries = w.update(transitions, sess)
 
