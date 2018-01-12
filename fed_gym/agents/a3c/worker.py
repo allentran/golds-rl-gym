@@ -127,7 +127,7 @@ class Worker(object):
                     sess.run(self.copy_params_op)
 
                     # Collect some experience
-                    transitions, local_t, global_t = self.run_n_steps(t_max, sess)
+                    transitions, local_t, global_t, mus = self.run_n_steps(t_max, sess, max_seq_length=max_seq_length)
 
                     if self.max_global_steps is not None and global_t >= self.max_global_steps:
                         tf.logging.info("Reached global step {}. Stopping.".format(global_t))
@@ -141,10 +141,10 @@ class Worker(object):
             except tf.errors.CancelledError:
                 return
 
-    def _policy_net_predict(self, state, history, sess):
+    def _policy_net_predict(self, state, history, sess, batch=False):
         feed_dict = {
-            self.policy_net.states: [state],
-            self.policy_net.history: [history],
+            self.policy_net.states: [state] if not batch else state,
+            self.policy_net.history: [history] if not batch else history,
         }
         preds = sess.run(self.policy_net.predictions, feed_dict)
         return preds["mu"], preds["sigma"]
@@ -165,13 +165,15 @@ class Worker(object):
     def get_random_action(mu, sigma, n_actions):
         raise NotImplementedError
 
-    def run_n_steps(self, n, sess):
+    def run_n_steps(self, n, sess, max_seq_length=5):
         transitions = []
+        mus = []
         for _ in xrange(n):
             # Take a step
             action_mu, action_sigma = self._policy_net_predict(
-                self.process_state(self.state), self.get_temporal_states(self.history), sess
+                self.process_state(self.state), self.get_temporal_states(self.history[-max_seq_length:]), sess
             )
+            mus.append(action_mu)
             action = self.get_random_action(action_mu, action_sigma, self.policy_net.num_actions)
             next_state, reward, done, _ = self.env.step(self.transform_raw_action(action))
 
@@ -196,7 +198,7 @@ class Worker(object):
                 self.state = next_state
                 self.history.append(self.process_state(next_state))
 
-        return transitions, local_t, global_t
+        return transitions, local_t, global_t, mus
 
     def update(self, transitions, sess, always_bootstrap=False, max_seq_length=5):
         """
@@ -238,6 +240,8 @@ class Worker(object):
             temporal_states, dtype='float32', padding='post', maxlen=max_seq_length
         )
 
+        print np.squeeze(temporal_state_matrix)
+
         feed_dict = {
             self.policy_net.states: np.array(states),
             self.policy_net.history: temporal_state_matrix,
@@ -249,8 +253,9 @@ class Worker(object):
         }
 
         # Train the global estimators using local gradients
-        global_step, pnet_loss, vnet_loss, _, _, pnet_summaries, vnet_summaries = sess.run(
+        predictions, global_step, pnet_loss, vnet_loss, _, _, pnet_summaries, vnet_summaries = sess.run(
             [
+                self.policy_net.predictions,
                 self.global_step,
                 self.policy_net.loss,
                 self.value_net.loss,
@@ -268,7 +273,7 @@ class Worker(object):
             self.summary_writer.add_summary(vnet_summaries, global_step)
             self.summary_writer.flush()
 
-        return pnet_loss, vnet_loss, pnet_summaries, vnet_summaries
+        return pnet_loss, vnet_loss, pnet_summaries, vnet_summaries, predictions
 
     @staticmethod
     def transform_raw_action(*raw_actions):
@@ -417,15 +422,17 @@ class TickerGatedTraderWorker(Worker):
         sigma = sigma[row_idx, choices]
         return mu + sigma * np.random.normal(size=mu.shape)
 
-    def run_n_steps(self, n, sess):
+    def run_n_steps(self, n, sess, max_seq_length=5):
         transitions = []
+        mus = []
         for _ in xrange(n):
             # Take a step
             action_mu, action_sigma, discrete_probs = self._policy_net_predict(
                 self.process_state(self.state, n_assets=self.n_assets),
-                self.get_temporal_states(self.history, n_assets=self.n_assets),
+                self.get_temporal_states(self.history[-max_seq_length:], n_assets=self.n_assets),
                 sess
             )
+            mus.append(action_mu)
             discrete_choices = self.get_random_discrete_action(discrete_probs[0])
             cont_action = self.get_random_action(action_mu[0], action_sigma[0], discrete_choices)
             next_state, reward, done, _ = self.env.step([discrete_choices, self.transform_raw_action(cont_action)])
@@ -451,7 +458,7 @@ class TickerGatedTraderWorker(Worker):
                 self.state = next_state
                 self.history.append(self.process_state(next_state, n_assets=self.n_assets))
 
-        return transitions, local_t, global_t
+        return transitions, local_t, global_t, mus
 
     def _policy_net_predict(self, state, history, sess):
         feed_dict = {
@@ -518,7 +525,7 @@ class TickerGatedTraderWorker(Worker):
         }
 
         # Train the global estimators using local gradients
-        global_step, pnet_loss, vnet_loss, _, _, pnet_summaries, vnet_summaries = sess.run(
+        global_step, pnet_loss, vnet_loss, _, _, pnet_summaries, vnet_summaries, predictions = sess.run(
             [
                 self.global_step,
                 self.policy_net.loss,
@@ -526,7 +533,8 @@ class TickerGatedTraderWorker(Worker):
                 self.pnet_train_op,
                 self.vnet_train_op,
                 self.policy_net.summaries,
-                self.value_net.summaries
+                self.value_net.summaries,
+                self.policy_net.predictions
             ],
             feed_dict
         )
@@ -537,4 +545,4 @@ class TickerGatedTraderWorker(Worker):
             self.summary_writer.add_summary(vnet_summaries, global_step)
             self.summary_writer.flush()
 
-        return pnet_loss, vnet_loss, pnet_summaries, vnet_summaries
+        return pnet_loss, vnet_loss, pnet_summaries, vnet_summaries, predictions

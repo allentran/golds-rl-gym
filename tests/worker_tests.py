@@ -1,4 +1,6 @@
 import itertools
+
+import numpy as np
 import tensorflow as tf
 
 from fed_gym.agents.a3c.worker import SolowWorker, TickerGatedTraderWorker
@@ -91,9 +93,10 @@ class SolowWorkerTest(tf.test.TestCase):
             sess.run(tf.global_variables_initializer())
             w.state = w.env.reset()
             w.history = [SolowWorker.process_state(w.state)]
-            transitions, local_t, global_t = w.run_n_steps(n_steps, sess)
-            policy_net_loss, value_net_loss, policy_net_summaries, value_net_summaries = w.update(transitions, sess)
+            transitions, local_t, global_t, mus = w.run_n_steps(n_steps, sess)
+            policy_net_loss, value_net_loss, policy_net_summaries, value_net_summaries, preds = w.update(transitions, sess)
 
+        np.testing.assert_array_almost_equal(np.squeeze(preds['mu']), np.squeeze(mus[::-1]))
         self.assertEqual(len(transitions), n_steps)
         self.assertIsNotNone(policy_net_loss)
         self.assertIsNotNone(value_net_loss)
@@ -189,9 +192,12 @@ class TickerTraderWorkerTests(tf.test.TestCase):
             sess.run(tf.global_variables_initializer())
             w.state = w.env.reset()
             w.history = [TickerGatedTraderWorker.process_state(w.state, n_assets=self.num_assets)]
-            transitions, local_t, global_t = w.run_n_steps(n_steps, sess)
-            policy_net_loss, value_net_loss, policy_net_summaries, value_net_summaries = w.update(transitions, sess)
+            transitions, local_t, global_t, mus = w.run_n_steps(n_steps, sess, max_seq_length=5)
+            policy_net_loss, value_net_loss, policy_net_summaries, value_net_summaries, preds = w.update(
+                transitions, sess, max_seq_length=5
+            )
 
+        np.testing.assert_array_almost_equal(np.squeeze(preds['mu']), np.squeeze(mus[::-1]))
         self.assertEqual(len(transitions), n_steps)
         self.assertIsNotNone(policy_net_loss)
         self.assertIsNotNone(value_net_loss)
