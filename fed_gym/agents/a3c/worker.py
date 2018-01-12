@@ -240,8 +240,6 @@ class Worker(object):
             temporal_states, dtype='float32', padding='post', maxlen=max_seq_length
         )
 
-        print np.squeeze(temporal_state_matrix)
-
         feed_dict = {
             self.policy_net.states: np.array(states),
             self.policy_net.history: temporal_state_matrix,
