@@ -53,7 +53,7 @@ class DiscreteAndContPolicyEstimator():
     BUY_IDX = 1
     SELL_IDX = 2
 
-    def __init__(self, num_assets, static_size, temporal_size, shared_layer, static_hidden_size=64, trainable=True, learning_rate=1e-4):
+    def __init__(self, num_assets, static_size, temporal_size, shared_layer, static_hidden_size=64, trainable=True, learning_rate=1e-4, seed=None):
 
         self.states = tf.placeholder(shape=(None, static_size), dtype=tf.float32, name="X")
         self.history = tf.placeholder(shape=(None, None, temporal_size), dtype=tf.float32, name="X_t")
@@ -72,6 +72,9 @@ class DiscreteAndContPolicyEstimator():
         X_t = tf.to_float(self.history)
 
         with tf.variable_scope("policy_net"):
+            if seed:
+                tf.set_random_seed(seed)
+
             state_T = shared_layer(X_t)
             dense_temporal = dense_layers(state_T)
             dense_static = tf.contrib.layers.fully_connected(X, static_hidden_size * 2)
@@ -94,27 +97,29 @@ class DiscreteAndContPolicyEstimator():
             mu = normal_params[:, :, :, 0]
             sigma = tf.nn.softplus(normal_params[:, :, :, 1]) + keras.backend.epsilon()
 
-            self.predictions = {
-                "mu": mu,
-                "sigma": sigma,
-                "probs": discrete_probs
-            }
-
-            discrete_entropy = - tf.reduce_sum(discrete_probs * tf.log(discrete_probs + keras.backend.epsilon()), axis=-1)
-            cont_entropy = tf.reduce_mean(0.5 * (tf.log(2 * math.pi * tf.square(sigma) + keras.backend.epsilon()) + 1), axis=-1)
-            self.entropy_mean = tf.reduce_mean(cont_entropy + discrete_entropy, name="entropy_mean")
-
             one_hot_actions = tf.one_hot(self.discrete_actions, depth=self.num_actions, dtype=tf.float32)
 
             action_probs = tf.reduce_sum(one_hot_actions * discrete_probs, axis=-1)
-            mu_action = tf.reduce_sum(mu * one_hot_actions, axis=-1)
-            sig_action = tf.reduce_sum(sigma * one_hot_actions, axis=-1)
+            mu_action = tf.reduce_sum(one_hot_actions * mu, axis=-1)
+            sig_action = tf.reduce_sum(one_hot_actions * sigma, axis=-1)
+
+            cont_dist = tf.distributions.Normal(mu_action, sig_action)
+
+            self.predictions = {
+                "mu": mu,
+                "sigma": sigma,
+                "probs": discrete_probs,
+            }
+
+            discrete_entropy = - tf.reduce_sum(discrete_probs * tf.log(discrete_probs), axis=-1)
+            cont_entropy = cont_dist.entropy()
+            self.entropy_mean = tf.reduce_mean(cont_entropy + discrete_entropy, name="entropy_mean")
 
             nll_discrete = - tf.log(action_probs)
-            nll_cont = tf.log(sig_action + keras.backend.epsilon()) + tf.square(self.actions - mu_action) / (2 * tf.square(sig_action))
+            nll_cont = - cont_dist.log_prob(self.actions)
             loss = (nll_discrete + nll_cont) * self.advantages[:, None]
 
-            self.loss = tf.identity(tf.reduce_sum(loss) - 1e-3 * self.entropy_mean, name='loss')
+            self.loss = tf.identity(tf.reduce_sum(loss) - 0 * self.entropy_mean, name='loss')
 
             tf.summary.scalar(self.loss.op.name, self.loss)
             tf.summary.scalar(self.entropy_mean.op.name, self.entropy_mean)
@@ -124,10 +129,11 @@ class DiscreteAndContPolicyEstimator():
             tf.summary.histogram('advantages', self.advantages)
             tf.summary.histogram('buy_prob', discrete_probs[:, :, self.BUY_IDX])
             tf.summary.histogram('sell_prob', discrete_probs[:, :, self.SELL_IDX])
+            tf.summary.histogram('z_var', (self.actions - mu_action) / sig_action)
             tf.summary.histogram('sigmoid_actions', tf.nn.sigmoid(self.actions))
             tf.summary.histogram('tanh_actions', tf.nn.tanh(self.actions))
-            tf.summary.histogram('mu', mu)
-            tf.summary.histogram('sigma', sigma)
+            tf.summary.histogram('mu', mu_action)
+            tf.summary.histogram('sigma', sig_action)
 
             if trainable:
                 self.optimizer = tf.train.AdamOptimizer(learning_rate)
@@ -160,7 +166,7 @@ class GaussianPolicyEstimator():
         train ops would set this to false.
     """
 
-    def __init__(self, num_actions, static_size, temporal_size, shared_layer, static_hidden_size=64, reuse=False, trainable=True, learning_rate=1e-4):
+    def __init__(self, num_actions, static_size, temporal_size, shared_layer, static_hidden_size=64, reuse=False, trainable=True, learning_rate=1e-4, stochastic=True, seed=None):
 
         self.states = tf.placeholder(shape=(None, static_size), dtype=tf.float32, name="X")
         self.history = tf.placeholder(shape=(None, None, temporal_size), dtype=tf.float32, name="X_t")
@@ -177,6 +183,10 @@ class GaussianPolicyEstimator():
         X_t = tf.to_float(self.history)
 
         with tf.variable_scope("policy_net"):
+
+            if seed:
+                tf.set_random_seed(seed)
+
             state_T = shared_layer(X_t)
             dense_temporal = dense_layers(state_T)
             dense_static = tf.contrib.layers.fully_connected(X, static_hidden_size * 2)
@@ -187,23 +197,26 @@ class GaussianPolicyEstimator():
             normal_params = tf.contrib.layers.fully_connected(normal_params, static_hidden_size)
             normal_params = tf.contrib.layers.fully_connected(normal_params, num_actions * 2, activation_fn=None)
             normal_params = tf.reshape(normal_params, [-1, num_actions, 2])
-            mu = normal_params[:, :, 0]
-            sigma = tf.nn.softplus(normal_params[:, :, 1]) + keras.backend.epsilon()
+            mu = tf.clip_by_value(normal_params[:, :, 0], -5., 5.)
+            sigma = tf.clip_by_value(tf.nn.softplus(normal_params[:, :, 1]) + 1e-3, 0., 5.)
+
+            dist = tf.distributions.Normal(loc=mu, scale=sigma)
 
             self.predictions = {
                 "mu": mu,
                 "sigma": sigma,
             }
 
-            self.entropy = 0.5 * (tf.log(2 * math.pi * tf.square(sigma) + keras.backend.epsilon()) + 1)
+            self.entropy = dist.entropy()
             self.entropy_mean = tf.reduce_mean(self.entropy, name="entropy_mean")
 
-            nll = tf.log(sigma + keras.backend.epsilon()) + tf.square(self.actions - mu) / (2 * tf.square(sigma))
+            nll = - dist.log_prob(self.actions)
             loss = nll * self.advantages[:, None]
-            self.loss = tf.identity(tf.reduce_sum(loss) - 1e-3 * self.entropy_mean, name='loss')
+            self.loss = tf.identity(tf.reduce_sum(loss), name='loss')
 
             tf.summary.scalar(self.loss.op.name, self.loss)
             tf.summary.scalar(self.entropy_mean.op.name, self.entropy_mean)
+            tf.summary.histogram('z_var', (self.actions - mu) / sigma)
             tf.summary.histogram('entropy', self.entropy)
             tf.summary.histogram('nll', nll)
             tf.summary.histogram('advantages', self.advantages)
@@ -287,6 +300,7 @@ class ValueEstimator():
             tf.summary.scalar("{}/reward_min".format(prefix), tf.reduce_min(self.targets))
             tf.summary.scalar("{}/reward_mean".format(prefix), tf.reduce_mean(self.targets))
             tf.summary.histogram("{}/capital".format(prefix), tf.exp(self.states[:, 0]) - 1)
+            tf.summary.histogram("{}/tfp".format(prefix), self.states[:, 1])
             if static_size == 2 * num_actions + 1:
                 for idx in xrange(num_actions):
                     tf.summary.histogram("{}/quantity_{}".format(prefix, idx), tf.exp(self.states[:, 1 + idx]) - 1)

@@ -10,6 +10,7 @@ import gym
 from fed_gym.agents.a3c.estimators import ValueEstimator, GaussianPolicyEstimator, rnn_graph_lstm
 from fed_gym.agents.a3c.worker import SolowWorker
 from fed_gym.agents.a3c.policy_monitor import PolicyMonitor
+from fed_gym.envs.fed_env import register_solow_env
 
 tf.logging.set_verbosity(tf.logging.INFO)
 
@@ -36,16 +37,17 @@ if not os.path.exists(CHECKPOINT_DIR):
 summary_writer = tf.summary.FileWriter(os.path.join(MODEL_DIR, "train"))
 
 INPUT_SIZE = 2
-TEMPORAL_SIZE = 1
+TEMPORAL_SIZE = 2
 NUM_ACTIONS = 1
 
 
-def make_env():
-    return gym.envs.make("Solow-v0")
+def make_env(p, q):
+    return gym.envs.make("Solow-%s-%s-v0" % (p, q))
 
-def make_eval_env():
-    return gym.envs.make("SolowSS-v0")
+p = 1
+q = 1
 
+register_solow_env(p, q)
 
 with tf.device("/cpu:0"):
 
@@ -79,7 +81,7 @@ with tf.device("/cpu:0"):
 
         worker = SolowWorker(
             name="worker_{}".format(worker_id),
-            env=make_env(),
+            env=make_env(p, q),
             policy_net=policy_net,
             value_net=value_net,
             shared_layer=lambda x: rnn_graph_lstm(x, 32, 1, True),
@@ -95,7 +97,7 @@ with tf.device("/cpu:0"):
     # Used to occasionally save videos for our policy net
     # and write episode rewards to Tensorboard
     pe = PolicyMonitor(
-        env=make_eval_env(),
+        env=make_env(p, q),
         policy_net=policy_net,
         summary_writer=summary_writer,
         saver=saver,
@@ -124,7 +126,11 @@ with tf.Session() as sess:
         worker_threads.append(t)
 
     # Start a thread for policy eval task
-    monitor_thread = threading.Thread(target=lambda: pe.continuous_eval(FLAGS.eval_every, sess, coord, SolowWorker))
+    monitor_thread = threading.Thread(
+        target=lambda: pe.continuous_eval(
+            FLAGS.eval_every, sess, coord, SolowWorker, 5, total_reward_log_file='Solow-%s-%s.json' % (p, q)
+        )
+    )
     monitor_thread.start()
 
     # Wait for all workers to finish

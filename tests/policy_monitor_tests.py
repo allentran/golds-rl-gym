@@ -21,7 +21,7 @@ class PolicyMonitorTest(tf.test.TestCase):
         self.batch_size = 16
         self.num_actions = 1
         self.input_size = 2
-        self.temporal_size = 1
+        self.temporal_size = 2
         self.T = 10
 
         self.env = make_env()

@@ -1,8 +1,9 @@
 import os
-import numpy as np
-import tensorflow as tf
+import json
 import time
 
+import numpy as np
+import tensorflow as tf
 from gym.wrappers import Monitor
 
 from estimators import GaussianPolicyEstimator, rnn_graph_lstm
@@ -41,7 +42,8 @@ class PolicyMonitor(object):
     def _create_policy_estimator(num_actions, input_size, temporal_size):
         return GaussianPolicyEstimator(
             num_actions, static_size=input_size, temporal_size=temporal_size,
-            shared_layer=lambda x: rnn_graph_lstm(x, 32, 1, True)
+            shared_layer=lambda x: rnn_graph_lstm(x, 32, 1, True),
+            stochastic=False
         )
 
     def _policy_net_predict(self, state, history, sess):
@@ -95,14 +97,27 @@ class PolicyMonitor(object):
 
             return total_reward, episode_length
 
-    def continuous_eval(self, eval_every, sess, coord, worker, max_seq_length):
+    def continuous_eval(self, eval_every, sess, coord, worker, max_seq_length, total_reward_log_file=None):
         """
         Continuously evaluates the policy every [eval_every] seconds.
         """
+        total_rewards = []
+        episode_lengths = []
         try:
             while not coord.should_stop():
-                self.eval_once(sess, worker, max_sequence_length=max_seq_length)
+                total_reward, episode_length = self.eval_once(sess, worker, max_sequence_length=max_seq_length)
+                total_rewards.append(total_reward)
+                episode_lengths.append(episode_length)
                 # Sleep until next evaluation cycle
+                if total_reward_log_file:
+                    with open(total_reward_log_file, 'w') as f:
+                        json.dump(
+                            {
+                                'total_reward': total_rewards,
+                                'episode_length': episode_lengths,
+                            },
+                            f
+                        )
                 time.sleep(eval_every)
         except tf.errors.CancelledError:
             return

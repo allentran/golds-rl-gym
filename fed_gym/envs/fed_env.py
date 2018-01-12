@@ -1,9 +1,19 @@
 
 import numpy as np
+from gym.envs.registration import register
 
 import gym
 from gym import spaces
 from data import sampler
+
+
+def register_solow_env(p, q):
+    register(
+        id='Solow-%s-%s-v0' % (p, q),
+        entry_point='fed_gym.envs:SolowEnv',
+        max_episode_steps=1024,
+        kwargs=dict(p=p, q=q)
+    )
 
 
 class TickerEnvForTests(gym.Env):
@@ -82,6 +92,8 @@ class TickerEnv(gym.Env):
         self.assets = None
         self.quantities = None
 
+        self.spread = 0.006 # 6 basis points
+
         self.data = sampler.OpenCloseSampler(ticker='IEF', inverse_asset=inverse_asset)
         self.data_idx = None
 
@@ -96,11 +108,11 @@ class TickerEnv(gym.Env):
 
         continuous_choices[buy_mask] /= max(continuous_choices[buy_mask].sum(), 1)
 
-        q_add[buy_mask] = (continuous_choices * self.cash_balance / self.prices)[buy_mask]
+        q_add[buy_mask] = (continuous_choices * self.cash_balance / (self.prices * (1 + self.spread)))[buy_mask]
         q_add[sell_mask] = - continuous_choices[sell_mask] * self.quantities[sell_mask]
 
         self.quantities += q_add
-        self.cash_balance += -(q_add * self.prices).sum()
+        self.cash_balance += -(q_add * self.prices * (1 + self.spread))[buy_mask].sum() - (q_add * (self.prices * (1 - self.spread)))[sell_mask].sum()
 
         old_assets = self.assets
         self.assets = self.cash_balance + np.sum(self.quantities * self.prices)
@@ -150,7 +162,8 @@ class SolowEnv(gym.Env):
         self.p = p
         self.q = q
         if self.p > 0:
-            self.rho_z = 0.95 ** np.arange(1, p + 1)
+            self.rho_z = 0.5 ** np.arange(1, p + 1)
+            self.rho_z /= self.rho_z.sum() / 0.95
         else:
             self.rho_z = 0.95
         if self.q > 0:
@@ -175,7 +188,17 @@ class SolowEnv(gym.Env):
         k_next = self._k_transition(self.k, y_t, s)
 
         e_t = np.random.normal(0, self.sigma)
-        z_next = self.rho_z * self.z + self.rho_e * self.e + e_t
+        ar_component = self.rho_z * self.z
+        try:
+            ar_component = ar_component.sum()
+        except AttributeError:
+            pass
+        ma_component = self.rho_e * self.e
+        try:
+            ma_component = ma_component.sum()
+        except AttributeError:
+            pass
+        z_next = ar_component + ma_component + e_t
 
         if self.p > 0:
             self.z = np.array(self.z[1:].tolist() + [z_next])
@@ -188,10 +211,9 @@ class SolowEnv(gym.Env):
         self.k = k_next
 
         state = np.array([self.k, z_next]).flatten()
-
         return (
             state,
-            (1 - s) * y_t,
+            np.log((1 - s) * y_t + 1e-4),
             s <= 0 or s >= 1.,
             {}
         )

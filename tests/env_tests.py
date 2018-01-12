@@ -92,6 +92,16 @@ class SolowEnvTests(unittest.TestCase):
         super(SolowEnvTests, cls).setUpClass()
         cls.static_env = fed_env.SolowSSEnv(sigma=0.)
         cls.stochastic_env = fed_env.SolowEnv(sigma=0.02)
+        cls.arima_env = fed_env.SolowEnv(p=3, q=2)
+
+    def arima_test(self):
+        self.arima_env.reset()
+        savings = 0.1
+
+        for _ in xrange(100):
+            state, consumption, done, _ = self.arima_env.step(savings)
+
+        self.assertFalse(done)
 
     def steady_state_test(self):
         self.static_env.reset()

@@ -13,6 +13,26 @@ Transition = collections.namedtuple(
 )
 
 
+def sigmoid(x):
+    "Numerically-stable sigmoid function."
+    if isinstance(x, float):
+        if x >= 0:
+            z = np.exp(-x)
+            return 1 / (1 + z)
+        else:
+            z = np.exp(x)
+            return z / (1 + z)
+    else:
+        pos_mask = x >= 0
+        z = np.zeros_like(x)
+        transformed = np.zeros_like(z)
+        z[pos_mask] = np.exp(-x[pos_mask])
+        z[~pos_mask] = np.exp(x[~pos_mask])
+        transformed[pos_mask] = 1 / (1 + z[pos_mask])
+        transformed[~pos_mask] = z[~pos_mask] / (1 + z[~pos_mask])
+        return transformed
+
+
 def make_copy_params_op(v1_list, v2_list):
     """
     Creates an operation that copies parameters from variable in v1_list to variables in v2_list.
@@ -127,7 +147,7 @@ class Worker(object):
             self.policy_net.history: [history],
         }
         preds = sess.run(self.policy_net.predictions, feed_dict)
-        return preds["mu"][0], preds["sigma"][0]
+        return preds["mu"], preds["sigma"]
 
     def _value_net_predict(self, state, history, sess):
         feed_dict = {
@@ -150,17 +170,17 @@ class Worker(object):
         for _ in xrange(n):
             # Take a step
             action_mu, action_sigma = self._policy_net_predict(
-                self.state, self.get_temporal_states(self.history), sess
+                self.process_state(self.state), self.get_temporal_states(self.history), sess
             )
             action = self.get_random_action(action_mu, action_sigma, self.policy_net.num_actions)
-            next_state, reward, done, _ = self.env.step(action)
+            next_state, reward, done, _ = self.env.step(self.transform_raw_action(action))
 
             # Store transition
             transitions.append(Transition(
-                state=self.state,
+                state=self.process_state(self.state),
                 action=action,
                 reward=reward,
-                next_state=next_state,
+                next_state=self.process_state(next_state),
                 done=done)
             )
 
@@ -192,26 +212,25 @@ class Worker(object):
         history = self.history
         if not transitions[-1].done or always_bootstrap:
             state = transitions[-1].next_state
-            processed_state = self.process_state(state)
-            reward = self._value_net_predict(processed_state, self.get_temporal_states(history), sess)
+            reward = self._value_net_predict(state, self.get_temporal_states(history), sess)
 
         # Accumulate minibatch exmaples
         states = []
         policy_advantages = []
         value_targets = []
-        transformed_actions = []
+        actions = []
         temporal_states = []
         history = np.vstack(history)
 
         for idx, transition in enumerate(transitions[::-1]):
             reward = transition.reward + self.discount_factor * reward
-            processed_state = self.process_state(transition.state)
+            processed_state = transition.state
             history_t = history[:-(idx + 1)]
             policy_advantage = reward - self._value_net_predict(processed_state, self.get_temporal_states(history_t), sess)
             # Accumulate updates
             temporal_states.append(self.get_temporal_states(history_t))
             states.append(processed_state)
-            transformed_actions.append(transition.action)
+            actions.append(transition.action)
             policy_advantages.append(policy_advantage)
             value_targets.append(reward)
 
@@ -222,11 +241,11 @@ class Worker(object):
         feed_dict = {
             self.policy_net.states: np.array(states),
             self.policy_net.history: temporal_state_matrix,
-            self.policy_net.advantages: policy_advantages,
-            self.policy_net.actions: self.untransform_action(np.array(transformed_actions)).reshape((-1, self.global_policy_net.num_actions)),
+            self.policy_net.advantages: np.array(policy_advantages).flatten(),
+            self.policy_net.actions: np.array(actions).reshape((-1, self.global_policy_net.num_actions)),
             self.value_net.states: np.array(states),
             self.value_net.history: temporal_state_matrix,
-            self.value_net.targets: value_targets,
+            self.value_net.targets: np.array(value_targets).flatten(),
         }
 
         # Train the global estimators using local gradients
@@ -268,24 +287,20 @@ class SolowWorker(Worker):
 
     @staticmethod
     def get_temporal_states(history):
-        return np.array(history)[:, 1][:, None]
+        return np.array(history)
 
     @staticmethod
     def process_state(raw_state):
-        return np.array([np.log(raw_state[0]), raw_state[1]]).flatten()
+        return np.array([np.log(raw_state[0] / 100.), raw_state[1]]).flatten()
 
     @staticmethod
     def get_random_action(mu, sigma, n_actions):
         raw_action = np.random.normal(mu, sigma)[0]
-        return SolowWorker.transform_raw_action(raw_action)
+        return raw_action
 
     @staticmethod
     def transform_raw_action(*raw_actions):
-        return 1 / (1 + np.exp(-raw_actions[0]))
-
-    @staticmethod
-    def untransform_action(*savings_rates):
-        return np.log(savings_rates[0] / (1 - savings_rates[0]))
+        return min(0.99, sigmoid(raw_actions[0]))
 
 
 class TradeWorker(Worker):
@@ -309,7 +324,7 @@ class TradeWorker(Worker):
 
     @staticmethod
     def get_random_action(mu, sigma, n_actions):
-        raw_action = np.random.normal(mu, sigma, size=(n_actions, )).flatten()
+        raw_action = (mu + sigma * np.random.normal(size=(n_actions, ))).flatten()
         return TradeWorker.transform_raw_action(raw_action)
 
     @staticmethod
@@ -382,45 +397,45 @@ class TickerGatedTraderWorker(Worker):
         return np.vstack(history)[:, 1 + n_assets:]
 
     @staticmethod
-    def vectorized(prob_matrix, items):
-        s = prob_matrix.cumsum(axis=1)
-        r = np.random.rand(prob_matrix.shape[0])[:, None]
-        k = (s < r).sum(axis=1)
-        return items[k]
-
-    @staticmethod
-    def get_random_action(mu, sigma, probs):
-        discrete_action_idx = TickerGatedTraderWorker.vectorized(probs, np.arange(3))
-        mu_action = mu[np.arange(len(discrete_action_idx)), discrete_action_idx].flatten()
-        sig_action = sigma[np.arange(len(discrete_action_idx)), discrete_action_idx].flatten()
-        n_assets = mu.shape[0]
-        raw_action = mu_action + sig_action * np.random.normal(size=(n_assets, ))
-        return discrete_action_idx, TickerGatedTraderWorker.transform_raw_action(raw_action)
-
-    @staticmethod
     def transform_raw_action(*actions):
-        return 1 / (1 + np.exp(-actions[0]))
+        return sigmoid(actions[0])
 
     @staticmethod
     def untransform_action(*actions):
         return np.log(actions[0] / (1 - actions[0]))
 
+    @staticmethod
+    def get_random_discrete_action(probs):
+        cum_probs = probs.cumsum(axis=1)
+        u = np.random.rand(len(cum_probs), 1)
+        return (u < cum_probs).argmax(axis=1)
+
+    @staticmethod
+    def get_random_action(mu, sigma, choices):
+        row_idx = np.arange(len(choices))
+        mu = mu[row_idx, choices]
+        sigma = sigma[row_idx, choices]
+        return mu + sigma * np.random.normal(size=mu.shape)
+
     def run_n_steps(self, n, sess):
         transitions = []
         for _ in xrange(n):
             # Take a step
-            action_mu, action_sigma, probs = self._policy_net_predict(
-                self.state, self.get_temporal_states(self.history, n_assets=self.n_assets), sess
+            action_mu, action_sigma, discrete_probs = self._policy_net_predict(
+                self.process_state(self.state, n_assets=self.n_assets),
+                self.get_temporal_states(self.history, n_assets=self.n_assets),
+                sess
             )
-            actions = self.get_random_action(action_mu, action_sigma, probs)
-            next_state, reward, done, _ = self.env.step(actions)
+            discrete_choices = self.get_random_discrete_action(discrete_probs[0])
+            cont_action = self.get_random_action(action_mu[0], action_sigma[0], discrete_choices)
+            next_state, reward, done, _ = self.env.step([discrete_choices, self.transform_raw_action(cont_action)])
 
             # Store transition
             transitions.append(Transition(
-                state=self.state,
-                action=actions,
+                state=self.process_state(self.state, n_assets=self.n_assets),
+                action=[discrete_choices, cont_action],
                 reward=reward,
-                next_state=next_state,
+                next_state=self.process_state(next_state, n_assets=self.n_assets),
                 done=done)
             )
 
@@ -444,7 +459,7 @@ class TickerGatedTraderWorker(Worker):
             self.policy_net.history: [history],
         }
         preds = sess.run(self.policy_net.predictions, feed_dict)
-        return preds["mu"][0], preds["sigma"][0], preds['probs'][0]
+        return preds["mu"], preds["sigma"], preds['probs']
 
     def update(self, transitions, sess, always_bootstrap=False, max_seq_length=5):
         """
@@ -460,9 +475,8 @@ class TickerGatedTraderWorker(Worker):
         history = self.history
         if not transitions[-1].done or always_bootstrap:
             state = transitions[-1].next_state
-            processed_state = self.process_state(state, n_assets=self.n_assets)
             reward = self._value_net_predict(
-                processed_state, self.get_temporal_states(history, n_assets=self.n_assets), sess
+                state, self.get_temporal_states(history, n_assets=self.n_assets), sess
             )
 
         # Accumulate minibatch exmaples
@@ -476,14 +490,13 @@ class TickerGatedTraderWorker(Worker):
 
         for idx, transition in enumerate(transitions[::-1]):
             reward = transition.reward + self.discount_factor * reward
-            processed_state = self.process_state(transition.state, n_assets=self.n_assets)
             history_t = history[:-(idx + 1)]
             policy_advantage = reward - self._value_net_predict(
-                processed_state, self.get_temporal_states(history_t, n_assets=self.n_assets), sess
+                transition.state, self.get_temporal_states(history_t, n_assets=self.n_assets), sess
             )
             # Accumulate updates
             temporal_states.append(self.get_temporal_states(history_t, n_assets=self.n_assets))
-            states.append(processed_state)
+            states.append(transition.state)
             discrete_actions.append(transition.action[0])
             transformed_cont_actions.append(transition.action[1][None, :])
             policy_advantages.append(policy_advantage)
@@ -498,7 +511,7 @@ class TickerGatedTraderWorker(Worker):
             self.policy_net.history: temporal_state_matrix,
             self.policy_net.advantages: policy_advantages,
             self.policy_net.discrete_actions: discrete_actions,
-            self.policy_net.actions: self.untransform_action(np.vstack(transformed_cont_actions)),
+            self.policy_net.actions: np.vstack(transformed_cont_actions),
             self.value_net.states: np.array(states),
             self.value_net.history: temporal_state_matrix,
             self.value_net.targets: value_targets,

@@ -18,7 +18,7 @@ class SolowWorkerTest(tf.test.TestCase):
         self.batch_size = 16
         self.num_actions = 1
         self.input_size = 2
-        self.temporal_size = 1
+        self.temporal_size = 2
         self.T = 10
 
         with tf.variable_scope("global"):
@@ -52,8 +52,8 @@ class SolowWorkerTest(tf.test.TestCase):
             temporal_state = w.get_temporal_states([state])
             mu, sig = w._policy_net_predict(state.flatten(), temporal_state.reshape((1, self.temporal_size)), sess)
 
-            self.assertEqual(mu.shape, (self.num_actions, ))
-            self.assertEqual(sig.shape, (self.num_actions, ))
+            self.assertEqual(mu[0].shape, (self.num_actions, ))
+            self.assertEqual(sig[0].shape, (self.num_actions, ))
 
     def value_predict_test(self):
         w = SolowWorker(
@@ -70,7 +70,7 @@ class SolowWorkerTest(tf.test.TestCase):
             sess.run(tf.global_variables_initializer())
             state = w.env.reset()
             temporal_state = w.get_temporal_states([SolowWorker.process_state(state)])
-            state_value = w._value_net_predict(state, temporal_state.reshape((1, 1)), sess)
+            state_value = w._value_net_predict(state, temporal_state.reshape((1, self.temporal_size)), sess)
             self.assertEqual(state_value.shape, ())
 
     def run_n_steps_and_update_test(self):
@@ -148,8 +148,8 @@ class TickerTraderWorkerTests(tf.test.TestCase):
             temporal_state = w.get_temporal_states([state], n_assets=self.num_assets)
             mu, sig, probs = w._policy_net_predict(state.flatten(), temporal_state.reshape((1, self.temporal_size)), sess)
 
-            self.assertEqual(mu.shape, (self.num_assets, 3))
-            self.assertEqual(sig.shape, (self.num_assets, 3))
+            self.assertEqual(mu[0].shape, (self.num_assets, 3))
+            self.assertEqual(sig[0].shape, (self.num_assets, 3))
 
     def value_predict_test(self):
         w = TickerGatedTraderWorker(
