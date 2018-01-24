@@ -16,7 +16,7 @@ class TickerEnvTests(unittest.TestCase):
     def deplete_test(self):
         self.env.reset()
 
-        for _ in xrange(100):
+        for _ in range(100):
             state, reward, done, _ = self.env.step(
                 [np.array([self.env.BUY_IDX] * self.n_assets), np.array([0.1] * self.n_assets)]
             )
@@ -53,7 +53,7 @@ class TradingEnvTests(unittest.TestCase):
     def deplete_test(self):
         self.env.reset()
 
-        for _ in xrange(100):
+        for _ in range(100):
             state, reward, done, _ = self.env.step(np.array([0.1, 0.1]))
 
         cash = state[0]
@@ -77,7 +77,7 @@ class TradingEnvTests(unittest.TestCase):
         self.env.reset()
 
         p = []
-        for _ in xrange(100):
+        for _ in range(100):
             state, reward, done, _ = self.env.step(np.array([0.0, 0.0]))
             prices = state[3:5]
             p.append(prices)
@@ -98,7 +98,7 @@ class SolowEnvTests(unittest.TestCase):
         self.arima_env.reset()
         savings = 0.1
 
-        for _ in xrange(100):
+        for _ in range(100):
             state, consumption, done, _ = self.arima_env.step(savings)
 
         self.assertFalse(done)
@@ -108,7 +108,7 @@ class SolowEnvTests(unittest.TestCase):
         savings = 0.1
         k_ss = (savings / self.static_env.delta) ** (1 / (1 - self.static_env.alpha))
 
-        for _ in xrange(10000):
+        for _ in range(10000):
             state, consumption, done, _ = self.static_env.step(savings)
             capital = state[0]
 
@@ -122,7 +122,7 @@ class SolowEnvTests(unittest.TestCase):
 
         capital_states = []
 
-        for _ in xrange(100000):
+        for _ in range(100000):
             state, consumption, done, _ = self.stochastic_env.step(savings)
             capital = state[0]
             capital_states.append(capital)

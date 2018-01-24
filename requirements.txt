@@ -1,10 +1,7 @@
 bleach==1.5.0
 certifi==2017.11.5
 chardet==3.0.4
-decorator==4.1.2
 enum34==1.1.6
--e git+https://github.com/allentran/fed-gym.git@0a2c2931096ba99683e05ede359f29e120eda97e#egg=fed_gym
-funcsigs==1.0.2
 future==0.16.0
 futures==3.2.0
 gym==0.9.4
@@ -33,7 +30,6 @@ scandir==1.6
 simplegeneric==0.8.1
 six==1.11.0
 tensorflow==1.4.1
-tensorflow-tensorboard==0.4.0rc3
 traitlets==4.3.2
 urllib3==1.22
 wcwidth==0.1.7

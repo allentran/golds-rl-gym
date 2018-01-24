@@ -53,11 +53,11 @@ with tf.device("/cpu:0"):
     with tf.variable_scope("global") as vs:
         policy_net = GaussianPolicyEstimator(
             NUM_ACTIONS, static_size=INPUT_SIZE, temporal_size=TEMPORAL_SIZE,
-            shared_layer=lambda x: rnn_graph_lstm(x, 32, 1, True)
+            shared_layer=lambda x_t, x: rnn_graph_lstm(x_t, x, 32, 1, True)
         )
         value_net = ValueEstimator(
             static_size=INPUT_SIZE, temporal_size=TEMPORAL_SIZE,
-            shared_layer=lambda x: rnn_graph_lstm(x, 32, 1, True),
+            shared_layer=lambda x_t, x: rnn_graph_lstm(x_t, x, 32, 1, True),
             reuse=True
         )
 
@@ -66,7 +66,7 @@ with tf.device("/cpu:0"):
 
     # Create worker graphs
     workers = []
-    for worker_id in xrange(NUM_WORKERS):
+    for worker_id in range(NUM_WORKERS):
         # We only write summaries in one of the workers because they're
         # pretty much identical and writing them on all workers
         # would be a waste of space
@@ -79,7 +79,7 @@ with tf.device("/cpu:0"):
             env=make_env(),
             policy_net=policy_net,
             value_net=value_net,
-            shared_layer=lambda x: rnn_graph_lstm(x, 32, 1, True),
+            shared_layer=lambda x_t, x: rnn_graph_lstm(x_t, x, 32, 1, True),
             global_counter=global_counter,
             discount_factor = 0.99,
             summary_writer=worker_summary_writer,
