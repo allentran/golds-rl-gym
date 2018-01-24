@@ -179,11 +179,7 @@ class GaussianWorker(object):
         preds = sess.run(self.value_net.predictions, feed_dict)
         return preds["logits"][0]
 
-    def get_temporal_states(self, history):
-        raise NotImplementedError
-
-    @staticmethod
-    def get_random_action(mu, sigma, n_actions):
+    def get_random_action(self, mu, sigma, n_actions):
         raise NotImplementedError
 
     def get_action_from_policy(self, processed_state, history, session):
@@ -338,20 +334,25 @@ class GaussianWorker(object):
             self.value_net.targets: value_targets.flatten(),
         }
 
-    @staticmethod
-    def transform_raw_action(*raw_actions):
+    def transform_raw_action(self, *raw_actions):
         raise NotImplementedError
+
+    def get_temporal_states(self, history):
+        if len(history) == 1:
+            return np.array(history[0]).reshape((1, -1))
+        return np.array(history)
 
     def process_state(self, raw_state):
         return raw_state
 
 
-class GridWorker(GaussianWorker):
+class GridSolowWorker(GaussianWorker):
 
     def __init__(self, name, env, policy_net, value_net, shared_layer, global_counter, discount_factor=0.99,
-                 summary_writer=None, max_global_steps=None, scale=1.):
-        super(GridWorker, self).__init__(name, env, policy_net, value_net, shared_layer, global_counter,
-                                         discount_factor, summary_writer, max_global_steps, scale)
+                 summary_writer=None, max_global_steps=None, scale=1., ub=0.99, lb=0.01, n_grid=51):
+        super(GridSolowWorker, self).__init__(name, env, policy_net, value_net, shared_layer, global_counter,
+                                              discount_factor, summary_writer, max_global_steps, scale)
+        self.idx_to_grid = {idx: v for idx, v in zip(range(n_grid), np.linspace(lb, ub, n_grid))}
 
     def build_local_policy_net(self, global_policy_net, shared_layer):
         return DiscretePolicyEstimator(
@@ -369,9 +370,24 @@ class GridWorker(GaussianWorker):
         self.debug.append(preds['probs'][0])
         return self.get_random_action(preds['probs'][0], None, None)
 
-    @staticmethod
-    def get_random_action(probs, sigma, n_actions):
+    def transform_raw_action(self, *raw_actions):
+        actions = raw_actions[0].flatten()
+        return self.idx_to_grid[actions[0]]
+
+    def get_random_action(self, probs, sigma, n_actions):
         return [GaussianWorker.get_random_discrete_action(probs)]
+
+    def fill_feed_dict_for_update(self, states, temporal_state_matrix, advantages, actions, value_targets):
+        actions = np.array(actions)
+        return {
+            self.policy_net.states: states,
+            self.policy_net.history: temporal_state_matrix,
+            self.policy_net.advantages: np.array(advantages[::-1]).flatten() / self.scale,
+            self.policy_net.actions: actions.reshape((-1, self.global_policy_net.num_outputs)),
+            self.value_net.states: states,
+            self.value_net.history: temporal_state_matrix,
+            self.value_net.targets: value_targets.flatten(),
+        }
 
 
 class SolowWorker(GaussianWorker):
@@ -387,21 +403,14 @@ class SolowWorker(GaussianWorker):
             shared_layer=shared_layer,
         )
 
-    def get_temporal_states(self, history):
-        if len(history) == 1:
-            return np.array(history[0]).reshape((1, -1))
-        return np.array(history)
-
     def process_state(self, raw_state):
         return np.array([np.log(raw_state[0] / self.scale), raw_state[1]]).flatten()
 
-    @staticmethod
-    def get_random_action(mu, sigma, n_actions):
+    def get_random_action(self, mu, sigma, n_actions):
         raw_action = np.random.normal(mu, sigma)
         return [raw_action]
 
-    @staticmethod
-    def transform_raw_action(*raw_actions):
+    def transform_raw_action(self, *raw_actions):
         return sigmoid(raw_actions[0])
 
 
@@ -423,10 +432,9 @@ class TradeWorker(GaussianWorker):
     def get_temporal_states(self, history):
         return np.vstack(history)
 
-    @staticmethod
-    def get_random_action(mu, sigma, n_actions):
+    def get_random_action(self, mu, sigma, n_actions):
         raw_action = (mu + sigma * np.random.normal(size=(n_actions, ))).flatten()
-        return TradeWorker.transform_raw_action(raw_action)
+        return self.transform_raw_action(raw_action)
 
     @staticmethod
     def transform_raw_action(*raw_actions):
@@ -470,8 +478,7 @@ class TickerGatedTraderWorker(GaussianWorker):
     def transform_raw_action(*actions):
         return [actions[0], sigmoid(actions[1])]
 
-    @staticmethod
-    def get_random_action(mu, sigma, choices):
+    def get_random_action(self, mu, sigma, choices):
         row_idx = np.arange(len(choices))
         mu = mu[row_idx, choices]
         sigma = sigma[row_idx, choices]
