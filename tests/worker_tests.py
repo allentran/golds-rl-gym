@@ -26,16 +26,16 @@ class SolowWorkerTest(tf.test.TestCase):
         with tf.variable_scope("global"):
             self.global_policy_net = GaussianPolicyEstimator(
                 self.num_actions, static_size=self.input_size, temporal_size=self.temporal_size,
-                shared_layer=lambda x: rnn_graph_lstm(x, 32, 1, True)
+                shared_layer=lambda x_t, x: rnn_graph_lstm(x_t, x, 32, 1, True)
             )
             self.global_value_net = ValueEstimator(
                 static_size=self.input_size, temporal_size=self.temporal_size,
-                shared_layer=lambda x: rnn_graph_lstm(x, 32, 1, True),
+                shared_layer=lambda x_t, x: rnn_graph_lstm(x_t, x, 32, 1, True),
                 reuse=True,
                 num_actions=self.num_actions
             )
 
-        self.shared_layer = lambda x: rnn_graph_lstm(x, 32, 1, True)
+        self.shared_layer = lambda x_t, x: rnn_graph_lstm(x_t, x, 32, 1, True)
 
     def policy_predict_test(self):
         w = SolowWorker(
@@ -50,9 +50,11 @@ class SolowWorkerTest(tf.test.TestCase):
 
         with self.test_session() as sess:
             sess.run(tf.global_variables_initializer())
-            state = SolowWorker.process_state(w.env.reset())
+            state = w.process_state(w.env.reset())
             temporal_state = w.get_temporal_states([state])
-            mu, sig = w._policy_net_predict(state.flatten(), temporal_state.reshape((1, self.temporal_size)), sess)
+            preds = w._policy_net_predict(state.flatten(), temporal_state.reshape((1, self.temporal_size)), sess)
+            mu = preds['mu']
+            sig = preds['sigma']
 
             self.assertEqual(mu[0].shape, (self.num_actions, ))
             self.assertEqual(sig[0].shape, (self.num_actions, ))
@@ -71,9 +73,31 @@ class SolowWorkerTest(tf.test.TestCase):
         with self.test_session() as sess:
             sess.run(tf.global_variables_initializer())
             state = w.env.reset()
-            temporal_state = w.get_temporal_states([SolowWorker.process_state(state)])
+            temporal_state = w.get_temporal_states([w.process_state(state)])
             state_value = w._value_net_predict(state, temporal_state.reshape((1, self.temporal_size)), sess)
             self.assertEqual(state_value.shape, ())
+
+    def one_transition_test(self):
+
+        n_steps = 1
+
+        w = SolowWorker(
+            name="test",
+            env=SolowEnv(),
+            policy_net=self.global_policy_net,
+            value_net=self.global_value_net,
+            shared_layer=self.shared_layer,
+            global_counter=self.global_counter,
+            discount_factor=self.discount_factor
+        )
+
+        with self.test_session() as sess:
+            sess.run(tf.global_variables_initializer())
+            w.state = w.env.reset()
+            w.history = [w.process_state(w.state)]
+            transitions, local_t, global_t, mus, done = w.run_n_steps(n_steps, sess, max_seq_length=5)
+            transitions = [transitions[0]]
+            w.update(transitions, sess, max_seq_length=5)
 
     def run_n_steps_and_update_test(self):
 
@@ -92,16 +116,21 @@ class SolowWorkerTest(tf.test.TestCase):
         with self.test_session() as sess:
             sess.run(tf.global_variables_initializer())
             w.state = w.env.reset()
-            w.history = [SolowWorker.process_state(w.state)]
-            transitions, local_t, global_t, mus = w.run_n_steps(n_steps, sess)
-            policy_net_loss, value_net_loss, policy_net_summaries, value_net_summaries, preds = w.update(transitions, sess)
+            w.history = [w.process_state(w.state)]
 
-        np.testing.assert_array_almost_equal(np.squeeze(preds['mu']), np.squeeze(mus[::-1]))
-        self.assertEqual(len(transitions), n_steps)
-        self.assertIsNotNone(policy_net_loss)
-        self.assertIsNotNone(value_net_loss)
-        self.assertIsNotNone(policy_net_summaries)
-        self.assertIsNotNone(value_net_summaries)
+            transitions, local_t, global_t, mus, done = w.run_n_steps(n_steps, sess)
+            policy_net_loss, value_net_loss, policy_net_summaries, value_net_summaries, preds = w.update(transitions, sess)
+            np.testing.assert_array_almost_equal(np.squeeze(preds['mu']), np.squeeze(mus[::-1]))
+
+            self.assertEqual(len(transitions), n_steps)
+            self.assertIsNotNone(policy_net_loss)
+            self.assertIsNotNone(value_net_loss)
+            self.assertIsNotNone(policy_net_summaries)
+            self.assertIsNotNone(value_net_summaries)
+
+            transitions, local_t, global_t, mus, done = w.run_n_steps(n_steps, sess)
+            policy_net_loss, value_net_loss, policy_net_summaries, value_net_summaries, preds = w.update(transitions, sess)
+            np.testing.assert_array_almost_equal(np.squeeze(preds['mu']), np.squeeze(mus[::-1]))
 
 
 class TickerTraderWorkerTests(tf.test.TestCase):
@@ -123,16 +152,16 @@ class TickerTraderWorkerTests(tf.test.TestCase):
         with tf.variable_scope("global"):
             self.global_policy_net = DiscreteAndContPolicyEstimator(
                 self.num_assets, static_size=self.input_size, temporal_size=self.temporal_size,
-                shared_layer=lambda x: rnn_graph_lstm(x, 32, 1, True)
+                shared_layer=lambda x_t, x: rnn_graph_lstm(x_t, x, 32, 1, True)
             )
             self.global_value_net = ValueEstimator(
                 static_size=self.input_size, temporal_size=self.temporal_size,
-                shared_layer=lambda x: rnn_graph_lstm(x, 32, 1, True),
+                shared_layer=lambda x_t, x: rnn_graph_lstm(x_t, x, 32, 1, True),
                 reuse=True,
                 num_actions=self.num_actions
             )
 
-        self.shared_layer = lambda x: rnn_graph_lstm(x, 32, 1, True)
+        self.shared_layer = lambda x_t, x: rnn_graph_lstm(x_t, x, 32, 1, True)
 
     def policy_predict_test(self):
         w = TickerGatedTraderWorker(
@@ -147,9 +176,10 @@ class TickerTraderWorkerTests(tf.test.TestCase):
 
         with self.test_session() as sess:
             sess.run(tf.global_variables_initializer())
-            state = TickerGatedTraderWorker.process_state(w.env.reset(), n_assets=self.num_assets)
-            temporal_state = w.get_temporal_states([state], n_assets=self.num_assets)
-            mu, sig, probs = w._policy_net_predict(state.flatten(), temporal_state.reshape((1, self.temporal_size)), sess)
+            state = w.process_state(w.env.reset())
+            temporal_state = w.get_temporal_states([state])
+            preds = w._policy_net_predict(state.flatten(), temporal_state.reshape((1, self.temporal_size)), sess)
+            mu, sig, probs = preds['mu'], preds['sigma'], preds['probs']
 
             self.assertEqual(mu[0].shape, (self.num_assets, 3))
             self.assertEqual(sig[0].shape, (self.num_assets, 3))
@@ -168,9 +198,7 @@ class TickerTraderWorkerTests(tf.test.TestCase):
         with self.test_session() as sess:
             sess.run(tf.global_variables_initializer())
             state = w.env.reset()
-            temporal_state = w.get_temporal_states(
-                [TickerGatedTraderWorker.process_state(state, n_assets=self.num_assets)], n_assets=self.num_assets
-            )
+            temporal_state = w.get_temporal_states([w.process_state(state)])
             state_value = w._value_net_predict(state, temporal_state.reshape((1, self.temporal_size)), sess)
             self.assertEqual(state_value.shape, ())
 
@@ -191,15 +219,22 @@ class TickerTraderWorkerTests(tf.test.TestCase):
         with self.test_session() as sess:
             sess.run(tf.global_variables_initializer())
             w.state = w.env.reset()
-            w.history = [TickerGatedTraderWorker.process_state(w.state, n_assets=self.num_assets)]
-            transitions, local_t, global_t, mus = w.run_n_steps(n_steps, sess, max_seq_length=5)
+            w.history = [w.process_state(w.state)]
+
+            transitions, local_t, global_t, mus, done = w.run_n_steps(n_steps, sess, max_seq_length=5)
             policy_net_loss, value_net_loss, policy_net_summaries, value_net_summaries, preds = w.update(
                 transitions, sess, max_seq_length=5
             )
+            np.testing.assert_array_almost_equal(np.squeeze(preds['mu']), np.squeeze(mus[::-1]))
+            self.assertEqual(len(transitions), n_steps)
+            self.assertIsNotNone(policy_net_loss)
+            self.assertIsNotNone(value_net_loss)
+            self.assertIsNotNone(policy_net_summaries)
+            self.assertIsNotNone(value_net_summaries)
 
-        np.testing.assert_array_almost_equal(np.squeeze(preds['mu']), np.squeeze(mus[::-1]))
-        self.assertEqual(len(transitions), n_steps)
-        self.assertIsNotNone(policy_net_loss)
-        self.assertIsNotNone(value_net_loss)
-        self.assertIsNotNone(policy_net_summaries)
-        self.assertIsNotNone(value_net_summaries)
+            transitions, local_t, global_t, mus, done = w.run_n_steps(n_steps, sess, max_seq_length=5)
+            policy_net_loss, value_net_loss, policy_net_summaries, value_net_summaries, preds = w.update(
+                transitions, sess, max_seq_length=5
+            )
+            np.testing.assert_array_almost_equal(np.squeeze(preds['mu']), np.squeeze(mus[::-1]))
+
