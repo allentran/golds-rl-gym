@@ -90,8 +90,8 @@ class SolowEnvTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         super(SolowEnvTests, cls).setUpClass()
-        cls.static_env = fed_env.SolowSSEnv(sigma=0.)
-        cls.stochastic_env = fed_env.SolowEnv(sigma=0.02)
+        cls.static_env = fed_env.SolowSSEnv(sigma=0., T=10000)
+        cls.stochastic_env = fed_env.SolowEnv(sigma=0.02, T=100000)
         cls.arima_env = fed_env.SolowEnv(p=3, q=2)
 
     def arima_test(self):

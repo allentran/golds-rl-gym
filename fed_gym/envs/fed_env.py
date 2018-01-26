@@ -4,12 +4,17 @@ from gym.envs.registration import register
 
 import gym
 from gym import spaces
-from data import sampler
+from .data import sampler
 
 
 def register_solow_env(p, q):
     register(
         id='Solow-%s-%s-v0' % (p, q),
+        entry_point='fed_gym.envs:SolowEnv',
+        kwargs=dict(p=p, q=q)
+    )
+    register(
+        id='Solow-%s-%s-finite-v0' % (p, q),
         entry_point='fed_gym.envs:SolowEnv',
         max_episode_steps=1024,
         kwargs=dict(p=p, q=q)
@@ -152,12 +157,14 @@ class SolowEnv(gym.Env):
     Classic Solow model (no growth or pop growth) with log consumption utility
     States are histories of capital and tech innovation/shock
     """
-    def __init__(self, delta=0.02, sigma=0.1, p=1, q=1):
+    def __init__(self, delta=0.02, sigma=0.1, p=1, q=1, T=None):
         super(SolowEnv, self).__init__()
 
         self.delta = delta
         self.sigma = sigma
         self.alpha = 0.33
+
+        self.T = T if T else 2048
 
         self.p = p
         self.q = q
@@ -184,10 +191,11 @@ class SolowEnv(gym.Env):
         return (savings / self.delta) ** (1 / (1 - self.alpha))
 
     def _step(self, s):
+        s = max(1e-3, s)
         y_t = np.exp(self.z[-1]) * (self.k ** self.alpha)
         k_next = self._k_transition(self.k, y_t, s)
 
-        e_t = np.random.normal(0, self.sigma)
+        e_t = self.es.pop()
         ar_component = self.rho_z * self.z
         try:
             ar_component = ar_component.sum()
@@ -211,29 +219,36 @@ class SolowEnv(gym.Env):
         self.k = k_next
 
         state = np.array([self.k, z_next]).flatten()
+        reward = np.log((1 - s) * y_t + 1e-4)
         return (
             state,
-            np.log((1 - s) * y_t + 1e-4),
-            s <= 0 or s >= 1.,
+            reward,
+            False,
             {}
         )
 
+    def _seed(self, seed=None):
+        if seed:
+            np.random.seed(seed)
+
     def _reset(self):
-        self.k = self._k_ss(np.random.uniform(0.05, 0.9))
-        self.z = np.zeros(shape=(self.p, ))
+        self.k = self._k_ss(0.33)
+        self.z = np.random.normal(scale=self.sigma, size=(self.p, ))
         self.e = np.zeros(shape=(self.q, ))
+        self.es = np.random.normal(0, self.sigma, (self.T, )).tolist()
 
         return np.array([self.k, self.z[-1]]).flatten()
 
 
 class SolowSSEnv(SolowEnv):
-    def __init__(self, delta=0.02, sigma=0.02):
-        super(SolowSSEnv, self).__init__(delta, sigma, p=1, q=0)
+    def __init__(self, delta=0.02, sigma=0.02, T=None):
+        super(SolowSSEnv, self).__init__(delta, sigma, p=1, q=0, T=T)
 
     def _reset(self):
         self.k = self._k_ss(self.alpha)
-        self.z = np.array([np.random.uniform(-1e-2, 1e-2)])
+        self.z = np.array([0.])
         self.e = 0.
+        self.es = np.random.normal(0, self.sigma, (self.T, )).tolist()
 
         return np.array([self.k, self.z]).flatten()
 

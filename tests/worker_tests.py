@@ -51,8 +51,8 @@ class SolowWorkerTest(tf.test.TestCase):
         with self.test_session() as sess:
             sess.run(tf.global_variables_initializer())
             state = w.process_state(w.env.reset())
-            temporal_state = w.get_temporal_states([state])
-            preds = w._policy_net_predict(state.flatten(), temporal_state.reshape((1, self.temporal_size)), sess)
+            temporal_state = w.state_processor.process_temporal_states([state])
+            preds = w.policy_net.predict(state.flatten(), temporal_state.reshape((1, self.temporal_size)), sess)
             mu = preds['mu']
             sig = preds['sigma']
 
@@ -73,7 +73,7 @@ class SolowWorkerTest(tf.test.TestCase):
         with self.test_session() as sess:
             sess.run(tf.global_variables_initializer())
             state = w.env.reset()
-            temporal_state = w.get_temporal_states([w.process_state(state)])
+            temporal_state = w.state_processor.process_temporal_states([w.process_state(state)])
             state_value = w._value_net_predict(state, temporal_state.reshape((1, self.temporal_size)), sess)
             self.assertEqual(state_value.shape, ())
 
@@ -175,9 +175,9 @@ class GridWorkerTests(tf.test.TestCase):
 
         with self.test_session() as sess:
             sess.run(tf.global_variables_initializer())
-            state = w.process_state(w.env.reset())
-            temporal_state = w.get_temporal_states([state])
-            preds = w._policy_net_predict(state.flatten(), temporal_state.reshape((1, self.temporal_size)), sess)
+            state = w.state_processor.process_state(w.env.reset())
+            temporal_state = w.state_processor.process_temporal_states([state])
+            preds = w.policy_net.predict(state.flatten(), temporal_state.reshape((1, self.temporal_size)), sess)
             probs = preds['probs'][0]
 
             self.assertEqual(probs.shape, (self.num_outputs, self.num_choices))
@@ -196,7 +196,7 @@ class GridWorkerTests(tf.test.TestCase):
         with self.test_session() as sess:
             sess.run(tf.global_variables_initializer())
             state = w.env.reset()
-            temporal_state = w.get_temporal_states([w.process_state(state)])
+            temporal_state = w.state_processor.process_temporal_states([w.state_processor.process_state(state)])
             state_value = w._value_net_predict(state, temporal_state.reshape((1, self.temporal_size)), sess)
             self.assertEqual(state_value.shape, ())
 
@@ -217,7 +217,7 @@ class GridWorkerTests(tf.test.TestCase):
         with self.test_session() as sess:
             sess.run(tf.global_variables_initializer())
             w.state = w.env.reset()
-            w.history = [w.process_state(w.state)]
+            w.history = [w.state_processor.process_state(w.state)]
 
             transitions, local_t, global_t, probs, done = w.run_n_steps(n_steps, sess, max_seq_length=5)
             policy_net_loss, value_net_loss, policy_net_summaries, value_net_summaries, preds = w.update(
@@ -280,9 +280,9 @@ class TickerTraderWorkerTests(tf.test.TestCase):
 
         with self.test_session() as sess:
             sess.run(tf.global_variables_initializer())
-            state = w.process_state(w.env.reset())
-            temporal_state = w.get_temporal_states([state])
-            preds = w._policy_net_predict(state.flatten(), temporal_state.reshape((1, self.temporal_size)), sess)
+            state = w.state_processor.process_state(w.env.reset())
+            temporal_state = w.state_processor.process_temporal_states([state])
+            preds = w.policy_net.predict(state.flatten(), temporal_state.reshape((1, self.temporal_size)), sess)
             mu, sig, probs = preds['mu'], preds['sigma'], preds['probs']
 
             self.assertEqual(mu[0].shape, (self.num_assets, 3))
@@ -302,7 +302,7 @@ class TickerTraderWorkerTests(tf.test.TestCase):
         with self.test_session() as sess:
             sess.run(tf.global_variables_initializer())
             state = w.env.reset()
-            temporal_state = w.get_temporal_states([w.process_state(state)])
+            temporal_state = w.state_processor.process_temporal_states([w.state_processor.process_state(state)])
             state_value = w._value_net_predict(state, temporal_state.reshape((1, self.temporal_size)), sess)
             self.assertEqual(state_value.shape, ())
 
@@ -323,7 +323,7 @@ class TickerTraderWorkerTests(tf.test.TestCase):
         with self.test_session() as sess:
             sess.run(tf.global_variables_initializer())
             w.state = w.env.reset()
-            w.history = [w.process_state(w.state)]
+            w.history = [w.state_processor.process_state(w.state)]
 
             transitions, local_t, global_t, mus, done = w.run_n_steps(n_steps, sess, max_seq_length=5)
             policy_net_loss, value_net_loss, policy_net_summaries, value_net_summaries, preds = w.update(

@@ -1,11 +1,10 @@
 import itertools
 import collections
-import math
 
 import numpy as np
 import tensorflow as tf
 
-from .estimators import ValueEstimator, GaussianPolicyEstimator, DiscreteAndContPolicyEstimator, DiscretePolicyEstimator
+from .estimators import ValueEstimator, GaussianPolicyEstimator, DiscreteAndContPolicyEstimator, DiscretePolicyEstimator, SolowStateProcessor, TickerTraderStateProcessor
 
 Transition = collections.namedtuple(
     "Transition",
@@ -80,7 +79,7 @@ class GaussianWorker(object):
       summary_writer: A tf.train.SummaryWriter for Tensorboard summaries
       max_global_steps: If set, stop coordinator when global_counter > max_global_steps
     """
-    def __init__(self, name, env, policy_net, value_net, shared_layer, global_counter, discount_factor=0.99, summary_writer=None, max_global_steps=None, scale=1.):
+    def __init__(self, name, env, policy_net, value_net, shared_layer, global_counter, discount_factor=0.99, summary_writer=None, max_global_steps=None, scale=1., state_processor=None):
         self.name = name
         self.discount_factor = discount_factor
         self._lambda = 0.9
@@ -93,6 +92,7 @@ class GaussianWorker(object):
         self.summary_writer = summary_writer
         self.env = env
         self.scale = scale
+        self.state_processor = state_processor
 
         # Create local policy/value nets that are not updated asynchronously
         with tf.variable_scope(name):
@@ -105,7 +105,8 @@ class GaussianWorker(object):
             tf.contrib.slim.get_variables(scope=self.name+'/', collection=tf.GraphKeys.TRAINABLE_VARIABLES)
         )
 
-        self.vnet_train_op = make_train_op(self.value_net, self.global_value_net)
+        if value_net:
+            self.vnet_train_op = make_train_op(self.value_net, self.global_value_net)
         self.pnet_train_op = make_train_op(self.policy_net, self.global_policy_net)
 
         self.state = None
@@ -128,7 +129,7 @@ class GaussianWorker(object):
         with sess.as_default(), sess.graph.as_default():
             # Initial state
             self.state = self.env.reset()
-            self.history.append(self.process_state(self.state))
+            self.history.append(self.state_processor.process_state(self.state))
 
             try:
                 while not coord.should_stop():
@@ -148,20 +149,13 @@ class GaussianWorker(object):
                         transitions, sess, always_bootstrap=always_bootstrap, max_seq_length=max_seq_length
                     )
                     if done:
-                        self.state = self.env.reset()
-                        self.history = [self.process_state(self.state)]
+                        # self.state = self.env.reset()
+                        self.history = [self.state_processor.process_state(self.state)]
                     else:
                         self.history = self.history[-(2 * t_max):]
 
             except tf.errors.CancelledError:
                 return
-
-    def _policy_net_predict(self, state, history, sess, batch=False):
-        feed_dict = {
-            self.policy_net.states: [state] if not batch else state,
-            self.policy_net.history: [history] if not batch else history,
-        }
-        return sess.run(self.policy_net.predictions, feed_dict)
 
     def _value_net_predict_many(self, states, history, sess):
         feed_dict = {
@@ -182,22 +176,26 @@ class GaussianWorker(object):
     def get_random_action(self, mu, sigma, n_actions):
         raise NotImplementedError
 
-    def get_action_from_policy(self, processed_state, history, session):
-        preds = self._policy_net_predict(
-            processed_state, self.get_temporal_states(history), session
+    def get_action_from_policy(self, processed_state, history, session, stochastic):
+        preds = self.policy_net.predict(
+            processed_state, self.state_processor.process_temporal_states(history), session
         )
         self.debug.append(preds['mu'][0][0])
-        return self.get_random_action(preds['mu'][0][0], preds['sigma'][0][0], self.policy_net.num_actions)
+        mu = preds['mu'][0][0]
+        sigma = preds['sigma'][0][0]
+        if not stochastic:
+            return self.get_greedy_action(mu)
+        return self.get_random_action(mu, sigma, self.policy_net.num_actions)
 
-    def run_n_steps(self, n, sess, max_seq_length=5):
+    def run_n_steps(self, n, sess, max_seq_length=5, stochastic=True):
         transitions = []
         self.debug = []
         for _ in range(n):
             # Take a step
-            processed_state = self.process_state(self.state)
-            action = self.get_action_from_policy(processed_state, self.history[-max_seq_length:], sess)
+            processed_state = self.state_processor.process_state(self.state)
+            action = self.get_action_from_policy(processed_state, self.history[-max_seq_length:], sess, stochastic)
             next_state, reward, done, _ = self.env.step(self.transform_raw_action(*action))
-            processed_next_state = self.process_state(next_state)
+            processed_next_state = self.state_processor.process_state(next_state)
             # Store transition
             transitions.append(Transition(
                 state=processed_state,
@@ -211,7 +209,7 @@ class GaussianWorker(object):
             local_t = next(self.local_counter)
             global_t = next(self.global_counter)
 
-            self.history.append(self.process_state(next_state))
+            self.history.append(self.state_processor.process_state(next_state))
             if not done:
                 self.state = next_state
             else:
@@ -225,6 +223,9 @@ class GaussianWorker(object):
         cum_probs = probs.cumsum(axis=1)
         u = np.random.rand(len(cum_probs), 1)
         return (u < cum_probs).argmax(axis=1)
+
+    def get_greedy_action(self, mu_or_probs):
+        return sigmoid(mu_or_probs)
 
     def update(self, transitions, sess, always_bootstrap=False, max_seq_length=5, done_penalty=0.):
         """
@@ -240,7 +241,7 @@ class GaussianWorker(object):
         if not transitions[-1].done or always_bootstrap:
             reward = self._value_net_predict(
                 transitions[-1].next_state,
-                self.get_temporal_states(self.history[-max_seq_length:]),
+                self.state_processor.process_temporal_states(self.history[-max_seq_length:]),
                 sess
             )
 
@@ -259,7 +260,7 @@ class GaussianWorker(object):
             actions.append(transition.action)
             processed_state = transition.state
             history_t = self.history[- (steps - t + max_seq_length): - (steps - t)]
-            temporal_states.append(self.get_temporal_states(history_t))
+            temporal_states.append(self.state_processor.process_temporal_states(history_t))
             states.append(processed_state)
 
         temporal_state_matrix = tf.keras.preprocessing.sequence.pad_sequences(
@@ -337,21 +338,13 @@ class GaussianWorker(object):
     def transform_raw_action(self, *raw_actions):
         raise NotImplementedError
 
-    def get_temporal_states(self, history):
-        if len(history) == 1:
-            return np.array(history[0]).reshape((1, -1))
-        return np.array(history)
-
-    def process_state(self, raw_state):
-        return raw_state
-
 
 class GridSolowWorker(GaussianWorker):
 
     def __init__(self, name, env, policy_net, value_net, shared_layer, global_counter, discount_factor=0.99,
                  summary_writer=None, max_global_steps=None, scale=1., ub=0.99, lb=0.01, n_grid=51):
         super(GridSolowWorker, self).__init__(name, env, policy_net, value_net, shared_layer, global_counter,
-                                              discount_factor, summary_writer, max_global_steps, scale)
+                                              discount_factor, summary_writer, max_global_steps, scale, SolowStateProcessor())
         self.idx_to_grid = {idx: v for idx, v in zip(range(n_grid), np.linspace(lb, ub, n_grid))}
 
     def build_local_policy_net(self, global_policy_net, shared_layer):
@@ -363,15 +356,22 @@ class GridSolowWorker(GaussianWorker):
             shared_layer=shared_layer,
         )
 
-    def get_action_from_policy(self, processed_state, history, session):
-        preds = self._policy_net_predict(
-            processed_state, self.get_temporal_states(history), session
+    def get_action_from_policy(self, processed_state, history, session, stochastic):
+        preds = self.policy_net.predict(
+            processed_state, self.state_processor.process_temporal_states(history), session
         )
         self.debug.append(preds['probs'][0])
-        return self.get_random_action(preds['probs'][0], None, None)
+        if not stochastic:
+            return self.get_greedy_action(preds['probs'][0])
+        else:
+            return self.get_random_action(preds['probs'][0], None, None)
+
+    def get_greedy_action(self, mu_or_probs):
+        argmaxs = np.argmax(mu_or_probs, axis=-1).flatten()[0]
+        return [self.transform_raw_action([argmaxs])]
 
     def transform_raw_action(self, *raw_actions):
-        actions = raw_actions[0].flatten()
+        actions = raw_actions[0]
         return self.idx_to_grid[actions[0]]
 
     def get_random_action(self, probs, sigma, n_actions):
@@ -395,7 +395,7 @@ class SolowWorker(GaussianWorker):
     def __init__(self, name, env, policy_net, value_net, shared_layer, global_counter, discount_factor=0.99,
                  summary_writer=None, max_global_steps=None):
         super(SolowWorker, self).__init__(name, env, policy_net, value_net, shared_layer, global_counter,
-                                          discount_factor, summary_writer, max_global_steps, 100.)
+                                          discount_factor, summary_writer, max_global_steps, 100., SolowStateProcessor())
 
     def build_local_policy_net(self, policy_net, shared_layer):
         return GaussianPolicyEstimator(
@@ -405,6 +405,11 @@ class SolowWorker(GaussianWorker):
 
     def process_state(self, raw_state):
         return np.array([np.log(raw_state[0] / self.scale), raw_state[1]]).flatten()
+
+    @staticmethod
+    def process_state_with_options(raw_state, *args):
+        scale = args[0]
+        return np.array([np.log(raw_state[0] / scale), raw_state[1]]).flatten()
 
     def get_random_action(self, mu, sigma, n_actions):
         raw_action = np.random.normal(mu, sigma)
@@ -447,7 +452,7 @@ class TickerGatedTraderWorker(GaussianWorker):
                  summary_writer=None, max_global_steps=None, scale=1.):
         super(TickerGatedTraderWorker, self).__init__(name, env, policy_net, value_net, shared_layer,
                                                       global_counter, discount_factor, summary_writer,
-                                                      max_global_steps, scale)
+                                                      max_global_steps, scale, state_processor=TickerTraderStateProcessor(policy_net.num_assets))
         self.n_assets = policy_net.num_assets
 
     def build_local_policy_net(self, policy_net, shared_layer):
@@ -456,38 +461,16 @@ class TickerGatedTraderWorker(GaussianWorker):
             shared_layer=shared_layer
         )
 
-    def process_state(self, raw_state):
-        cash = raw_state[0]
-        quantities = raw_state[1: 1 + self.n_assets]
-        prices = raw_state[1 + self.n_assets: -self.n_assets]
-        volumes = raw_state[-self.n_assets:]
-
-        state = [np.log(cash + 1e-4)]
-        for idx in range(self.n_assets):
-            state.append(np.log(quantities[idx] + 1))
-        for idx in range(self.n_assets):
-            state.append(np.log(prices[idx]))
-        for idx in range(self.n_assets):
-            state.append(volumes[idx])
-        return np.array(state).flatten()
-
-    def get_temporal_states(self, history):
-        return np.vstack(history)[:, 1 + self.n_assets:]
-
-    @staticmethod
-    def transform_raw_action(*actions):
-        return [actions[0], sigmoid(actions[1])]
-
     def get_random_action(self, mu, sigma, choices):
         row_idx = np.arange(len(choices))
         mu = mu[row_idx, choices]
         sigma = sigma[row_idx, choices]
         return mu + sigma * np.random.normal(size=mu.shape)
 
-    def get_action_from_policy(self, processed_state, history, session):
-        preds = self._policy_net_predict(
+    def get_action_from_policy(self, processed_state, history, session, stochastic):
+        preds = self.policy_net.predict(
             processed_state,
-            self.get_temporal_states(history),
+            self.state_processor.process_temporal_states(history),
             session
         )
         probs = preds['probs'][0]
@@ -508,3 +491,9 @@ class TickerGatedTraderWorker(GaussianWorker):
             self.value_net.history: temporal_state_matrix,
             self.value_net.targets: value_targets.flatten(),
         }
+
+    def transform_raw_action(self, *raw_actions):
+        discrete_choices = raw_actions[0]
+        continuous_choices = raw_actions[1]
+        return discrete_choices, sigmoid(continuous_choices)
+

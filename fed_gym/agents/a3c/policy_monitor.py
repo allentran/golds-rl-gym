@@ -6,8 +6,8 @@ import numpy as np
 import tensorflow as tf
 from gym.wrappers import Monitor
 
-from estimators import GaussianPolicyEstimator, rnn_graph_lstm
-from worker import make_copy_params_op
+from .estimators import GaussianPolicyEstimator, rnn_graph_lstm
+from .worker import make_copy_params_op
 
 
 class PolicyMonitor(object):
@@ -20,10 +20,11 @@ class PolicyMonitor(object):
       policy_net: A policy estimator
       summary_writer: a tf.train.SummaryWriter used to write Tensorboard summaries
     """
-    def __init__(self, env, policy_net, summary_writer, saver=None, num_actions=None, input_size=None, temporal_size=None):
+    def __init__(self, env, global_policy_net, state_processor, summary_writer, saver=None, num_actions=None, input_size=None, temporal_size=None):
 
         self.env = Monitor(env, directory=os.path.abspath(summary_writer.get_logdir()), resume=True)
-        self.global_policy_net = policy_net
+        self.state_processor = state_processor
+        self.global_policy_net = global_policy_net
         self.summary_writer = summary_writer
         self.saver = saver
 
@@ -38,23 +39,21 @@ class PolicyMonitor(object):
             tf.contrib.slim.get_variables(scope="global", collection=tf.GraphKeys.TRAINABLE_VARIABLES),
             tf.contrib.slim.get_variables(scope="policy_eval", collection=tf.GraphKeys.TRAINABLE_VARIABLES))
 
+    def get_sigmoid_action_from_mu(self, processed_state, history, sess):
+        mu = self.policy_net.predict(processed_state, history, sess)['mu'].flatten()[0]
+        return 1. / (1 + np.exp(- mu))
+
+    def get_action_from_policy(self, processed_state, history, sess):
+        return self.get_sigmoid_action_from_mu(processed_state, history, sess)
+
     @staticmethod
     def _create_policy_estimator(num_actions, input_size, temporal_size):
         return GaussianPolicyEstimator(
             num_actions, static_size=input_size, temporal_size=temporal_size,
-            shared_layer=lambda x: rnn_graph_lstm(x, 32, 1, True),
-            stochastic=False
+            shared_layer=lambda x_t, x: rnn_graph_lstm(x_t, x, 32, 1, True),
         )
 
-    def _policy_net_predict(self, state, history, sess):
-        feed_dict = {
-            self.policy_net.states: [state],
-            self.policy_net.history: [history],
-        }
-        preds = sess.run(self.policy_net.predictions, feed_dict)
-        return preds["mu"][0], preds["sigma"][0]
-
-    def eval_once(self, sess, worker, max_sequence_length=5):
+    def eval_once(self, sess, max_sequence_length=5):
         with sess.as_default(), sess.graph.as_default():
             # Copy params to local model
             global_step, _ = sess.run([tf.train.get_global_step(), self.copy_params_op])
@@ -62,19 +61,18 @@ class PolicyMonitor(object):
             # Run an episode
             done = False
             state = self.env.reset()
-            processed_state = worker.process_state(state)
-            history = worker.get_temporal_states([processed_state])
+            processed_state = self.state_processor.process_state(state)
+            history = self.state_processor.process_temporal_states([processed_state])
             total_reward = 0.0
             episode_length = 0
             rewards = []
             while not done:
-                mu, sig = self._policy_net_predict(processed_state, history, sess)
-                action = worker.transform_raw_action(mu)
+                action = self.get_action_from_policy(processed_state, history, sess)
                 next_state, reward, done, _ = self.env.step(action)
-                next_processed_state = worker.process_state(next_state)
-                new_temporal_state = worker.get_temporal_states([next_processed_state])
+                next_processed_state = self.state_processor.process_state(next_state)
+                new_temporal_state = self.state_processor.process_temporal_states([next_processed_state])
                 history = np.vstack([history, new_temporal_state])[-max_sequence_length:, :]
-                total_reward += reward if not hasattr(reward, 'shape') else reward[0]
+                total_reward += reward
                 episode_length += 1
                 processed_state = next_processed_state
                 rewards.append(reward)
@@ -86,8 +84,8 @@ class PolicyMonitor(object):
             self.summary_writer.add_summary(episode_summary, global_step)
             self.summary_writer.flush()
 
-            if self.saver is not None:
-                self.saver.save(sess, self.checkpoint_path)
+            # if self.saver is not None:
+            #     self.saver.save(sess, self.checkpoint_path)
 
             tf.logging.info(
                 "Eval results at step {}: avg_reward {}, std_reward {}, episode_length {}".format(
@@ -95,7 +93,7 @@ class PolicyMonitor(object):
                 )
             )
 
-            return total_reward, episode_length
+            return total_reward, episode_length, rewards
 
     def continuous_eval(self, eval_every, sess, coord, worker, max_seq_length, total_reward_log_file=None):
         """
@@ -105,7 +103,7 @@ class PolicyMonitor(object):
         episode_lengths = []
         try:
             while not coord.should_stop():
-                total_reward, episode_length = self.eval_once(sess, worker, max_sequence_length=max_seq_length)
+                total_reward, episode_length, rewards = self.eval_once(sess, max_sequence_length=max_seq_length)
                 total_rewards.append(total_reward)
                 episode_lengths.append(episode_length)
                 # Sleep until next evaluation cycle
