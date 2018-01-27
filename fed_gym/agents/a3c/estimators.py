@@ -16,14 +16,14 @@ def true_length(sequence):
 def rnn_graph_lstm(temporal_inputs, static_inputs, hidden_size, num_layers, is_training):
 
     def make_cell():
-      return tf.nn.rnn_cell.LSTMCell(
+      return tf.nn.rnn_cell.GRUCell(
           hidden_size, reuse=not is_training
       )
 
     cell = tf.nn.rnn_cell.MultiRNNCell(
         [make_cell() for _ in range(num_layers)])
     outputs, state = tf.nn.dynamic_rnn(cell, temporal_inputs, dtype=tf.float32, sequence_length=true_length(temporal_inputs))
-    rnn_last = state[-1].h
+    rnn_last = state[-1]
 
     dense_temporal = tf.layers.dense(rnn_last, hidden_size * 2, activation=tf.nn.relu)
     dense_static = tf.layers.dense(static_inputs, hidden_size * 2, activation=tf.nn.relu)
@@ -76,7 +76,16 @@ class SolowStateProcessor(StateProcessor):
         return np.array(history)
 
 
-class DiscreteAndContPolicyEstimator():
+class PolicyEstimator(object):
+    def predict(self, state, history, sess, batch=False):
+        feed_dict = {
+            self.states: [state] if not batch else state,
+            self.history: [history] if not batch else history,
+        }
+        return sess.run(self.predictions, feed_dict)
+
+
+class DiscreteAndContPolicyEstimator(PolicyEstimator):
     """
     Policy Function approximator. Given a observation, returns probabilities
     over all possible actions.
@@ -190,15 +199,8 @@ class DiscreteAndContPolicyEstimator():
         sumaries = [s for s in summary_ops if var_scope_name in s.name]
         self.summaries = tf.summary.merge(sumaries)
 
-    def predict(self, state, history, sess, batch=False):
-        feed_dict = {
-            self.states: [state] if not batch else state,
-            self.history: [history] if not batch else history,
-        }
-        return sess.run(self.predictions, feed_dict)
 
-
-class DiscretePolicyEstimator():
+class DiscretePolicyEstimator(PolicyEstimator):
     """
     Policy Function approximator. Given a observation, returns probabilities
     over all possible actions.
@@ -213,7 +215,7 @@ class DiscretePolicyEstimator():
         train ops would set this to false.
     """
 
-    def __init__(self, num_outputs, num_choices, static_size, temporal_size, shared_layer, static_hidden_size=128, reuse=False, trainable=True, learning_rate=7e-4, seed=None, lb=-5., ub=5.):
+    def __init__(self, num_outputs, num_choices, static_size, temporal_size, shared_layer, static_hidden_size=128, reuse=False, trainable=True, learning_rate=1e-4, seed=None, lb=-5., ub=5.):
 
         self.states = tf.placeholder(shape=(None, static_size), dtype=tf.float32, name="X")
         self.history = tf.placeholder(shape=(None, None, temporal_size), dtype=tf.float32, name="X_t")
@@ -283,15 +285,8 @@ class DiscretePolicyEstimator():
         sumaries = [s for s in summary_ops if var_scope_name in s.name]
         self.summaries = tf.summary.merge(sumaries)
 
-    def predict(self, state, history, sess, batch=False):
-        feed_dict = {
-            self.states: [state] if not batch else state,
-            self.history: [history] if not batch else history,
-        }
-        return sess.run(self.predictions, feed_dict)
 
-
-class GaussianPolicyEstimator():
+class GaussianPolicyEstimator(PolicyEstimator):
     """
     Policy Function approximator. Given a observation, returns probabilities
     over all possible actions.
@@ -306,7 +301,7 @@ class GaussianPolicyEstimator():
         train ops would set this to false.
     """
 
-    def __init__(self, num_actions, static_size, temporal_size, shared_layer, static_hidden_size=128, reuse=False, trainable=True, learning_rate=7e-4, seed=None, lb=-5., ub=5.):
+    def __init__(self, num_actions, static_size, temporal_size, shared_layer, static_hidden_size=128, reuse=False, trainable=True, learning_rate=1e-4, seed=None, lb=-5., ub=5.):
 
         self.states = tf.placeholder(shape=(None, static_size), dtype=tf.float32, name="X")
         self.history = tf.placeholder(shape=(None, None, temporal_size), dtype=tf.float32, name="X_t")
@@ -338,7 +333,9 @@ class GaussianPolicyEstimator():
             with tf.variable_scope('sigma', reuse=False):
                 sigma = tf.layers.dense(dense_output, static_hidden_size * 2, activation=tf.nn.relu)
                 sigma = tf.layers.dense(sigma, static_hidden_size, activation=tf.nn.tanh)
-                sigma = tf.layers.dense(sigma, num_actions, activation=tf.nn.sigmoid, bias_initializer=tf.constant_initializer(-1.)) + 1e-3
+                sigma = tf.layers.dense(
+                    sigma, num_actions, activation=tf.nn.sigmoid, bias_initializer=tf.constant_initializer(-1.)
+                ) + 1e-3
 
             dist = tf.distributions.Normal(loc=mu, scale=sigma)
 
@@ -384,12 +381,6 @@ class GaussianPolicyEstimator():
         sumaries = [s for s in summary_ops if var_scope_name in s.name]
         self.summaries = tf.summary.merge(sumaries)
 
-    def predict(self, state, history, sess, batch=False):
-        feed_dict = {
-            self.states: [state] if not batch else state,
-            self.history: [history] if not batch else history,
-        }
-        return sess.run(self.predictions, feed_dict)
 
 
 class ValueEstimator():
@@ -406,7 +397,7 @@ class ValueEstimator():
         train ops would set this to false.
     """
 
-    def __init__(self, static_size, temporal_size, shared_layer, static_hidden_size=128, reuse=False, trainable=True, learning_rate=3e-4, num_actions=2, scale=1.):
+    def __init__(self, static_size, temporal_size, shared_layer, static_hidden_size=128, reuse=False, trainable=True, learning_rate=5e-5, num_actions=2, scale=1.):
 
         self.static_size = static_size
         self.temporal_size = temporal_size
@@ -432,7 +423,7 @@ class ValueEstimator():
             self.logits = tf.squeeze(self.logits, squeeze_dims=[1], name="logits")
 
             self.losses = tf.squared_difference(self.logits, self.targets)
-            self.loss = tf.reduce_sum(self.losses / scale, name="loss")
+            self.loss = 0.5 * tf.reduce_sum(self.losses / scale, name="loss")
 
             self.predictions = {
                 "logits": self.logits

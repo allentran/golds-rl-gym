@@ -1,6 +1,7 @@
 import itertools
 import collections
 
+import scipy.signal
 import numpy as np
 import tensorflow as tf
 
@@ -55,7 +56,7 @@ def make_train_op(local_estimator, global_estimator):
     """
     local_grads, _ = zip(*local_estimator.grads_and_vars)
     # Clip gradients
-    local_grads, _ = tf.clip_by_global_norm(local_grads, 5.0)
+    local_grads, _ = tf.clip_by_global_norm(local_grads, 40.0)
     _, global_vars = zip(*global_estimator.grads_and_vars)
     local_global_grads_and_vars = list(zip(local_grads, global_vars))
     return global_estimator.optimizer.apply_gradients(
@@ -82,7 +83,7 @@ class GaussianWorker(object):
     def __init__(self, name, env, policy_net, value_net, shared_layer, global_counter, discount_factor=0.99, summary_writer=None, max_global_steps=None, scale=1., state_processor=None):
         self.name = name
         self.discount_factor = discount_factor
-        self._lambda = 0.9
+        self._lambda = 0.96
         self.max_global_steps = max_global_steps
         self.global_step = tf.train.get_global_step()
         self.global_policy_net = policy_net
@@ -122,7 +123,6 @@ class GaussianWorker(object):
             shared_layer=shared_layer,
             scale=self.scale,
             reuse=True,
-            learning_rate=1e-4
         )
 
     def run(self, sess, coord, t_max, always_bootstrap=False, max_seq_length=3):
@@ -149,10 +149,10 @@ class GaussianWorker(object):
                         transitions, sess, always_bootstrap=always_bootstrap, max_seq_length=max_seq_length
                     )
                     if done:
-                        # self.state = self.env.reset()
+                        self.state = self.env.reset()
                         self.history = [self.state_processor.process_state(self.state)]
                     else:
-                        self.history = self.history[-(2 * t_max):]
+                        self.history = self.history[-(2 * max_seq_length):]
 
             except tf.errors.CancelledError:
                 return
@@ -227,6 +227,15 @@ class GaussianWorker(object):
     def get_greedy_action(self, mu_or_probs):
         return sigmoid(mu_or_probs)
 
+    @staticmethod
+    def gae_discount(x, gamma):
+        """
+        From https://github.com/openai/universe-starter-agent/blob/master/a3c.py#L12
+        :param gamma:
+        :return:
+        """
+        return scipy.signal.lfilter([1], [1, -gamma], x[::-1], axis=0)[::-1]
+
     def update(self, transitions, sess, always_bootstrap=False, max_seq_length=5, done_penalty=0.):
         """
         Updates global policy and value networks based on collected experience
@@ -249,8 +258,6 @@ class GaussianWorker(object):
 
         # Accumulate minibatch exmaples
         states = []
-        advantages = []
-        value_targets = []
         actions = []
         rewards = []
         temporal_states = []
@@ -280,23 +287,15 @@ class GaussianWorker(object):
             )
         delta_ts = np.array(delta_ts).flatten()
 
-        # GAE advantages + TD(lambda)
-        for t in range(len(transitions)):
-            deltas = delta_ts[t:]
-            gammas = self.discount_factor ** np.arange(len(deltas))
-            a_n = (gammas * deltas).cumsum()
-            weights = self._lambda ** np.arange(len(deltas))
-            weights[:-1] *= 1 - self._lambda
-            np.testing.assert_almost_equal(weights.sum(), 1., decimal=4)
-            advantage = (a_n * weights).sum()
-            advantages.append(advantage)
-            value_targets.append(advantage + V_st[t])
+        advantages = self.gae_discount(delta_ts, self.discount_factor * self._lambda)
+        value_targets = advantages + np.array(V_st[:-1])
+        value_targets = value_targets.flatten()[::-1]
 
         assert len(V_st) == len(transitions) + 1
 
         states = np.array(states[::-1])
         actions = actions[::-1]
-        value_targets = np.array(value_targets[::-1])
+        advantages = advantages.flatten()[::-1]
 
         feed_dict = self.fill_feed_dict_for_update(states, temporal_state_matrix, advantages, actions, value_targets)
 
@@ -328,7 +327,7 @@ class GaussianWorker(object):
         return {
             self.policy_net.states: states,
             self.policy_net.history: temporal_state_matrix,
-            self.policy_net.advantages: np.array(advantages[::-1]).flatten() / self.scale,
+            self.policy_net.advantages: advantages.flatten() / self.scale,
             self.policy_net.actions: actions.reshape((-1, self.global_policy_net.num_actions)),
             self.value_net.states: states,
             self.value_net.history: temporal_state_matrix,
@@ -382,7 +381,7 @@ class GridSolowWorker(GaussianWorker):
         return {
             self.policy_net.states: states,
             self.policy_net.history: temporal_state_matrix,
-            self.policy_net.advantages: np.array(advantages[::-1]).flatten() / self.scale,
+            self.policy_net.advantages: advantages / self.scale,
             self.policy_net.actions: actions.reshape((-1, self.global_policy_net.num_outputs)),
             self.value_net.states: states,
             self.value_net.history: temporal_state_matrix,
@@ -405,11 +404,6 @@ class SolowWorker(GaussianWorker):
 
     def process_state(self, raw_state):
         return np.array([np.log(raw_state[0] / self.scale), raw_state[1]]).flatten()
-
-    @staticmethod
-    def process_state_with_options(raw_state, *args):
-        scale = args[0]
-        return np.array([np.log(raw_state[0] / scale), raw_state[1]]).flatten()
 
     def get_random_action(self, mu, sigma, n_actions):
         raw_action = np.random.normal(mu, sigma)
@@ -484,7 +478,7 @@ class TickerGatedTraderWorker(GaussianWorker):
         return {
             self.policy_net.states: states,
             self.policy_net.history: temporal_state_matrix,
-            self.policy_net.advantages: np.array(advantages[::-1]).flatten() / self.scale,
+            self.policy_net.advantages: advantages / self.scale,
             self.policy_net.discrete_actions: discrete_actions,
             self.policy_net.actions: np.vstack(transformed_cont_actions),
             self.value_net.states: states,

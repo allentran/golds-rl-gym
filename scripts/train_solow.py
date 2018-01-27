@@ -7,7 +7,7 @@ import multiprocessing
 
 import gym
 
-from fed_gym.agents.a3c.estimators import ValueEstimator, GaussianPolicyEstimator, rnn_graph_lstm
+from fed_gym.agents.a3c.estimators import ValueEstimator, GaussianPolicyEstimator, rnn_graph_lstm, SolowStateProcessor
 from fed_gym.agents.a3c.worker import SolowWorker
 from fed_gym.agents.a3c.policy_monitor import PolicyMonitor
 from fed_gym.envs.fed_env import register_solow_env
@@ -42,7 +42,11 @@ NUM_ACTIONS = 1
 
 
 def make_env(p, q):
-    return gym.envs.make("Solow-%s-%s-v0" % (p, q))
+    return gym.envs.make("Solow-%s-%s-finite-v0" % (p, q))
+
+
+def make_eval_env(p, q):
+    return gym.envs.make("Solow-%s-%s-finite-v0" % (p, q))
 
 p = 1
 q = 1
@@ -55,15 +59,17 @@ with tf.device("/cpu:0"):
     global_step = tf.Variable(0, name="global_step", trainable=False)
 
     # Global policy and value nets
-    with tf.variable_scope("global") as vs:
+    with tf.variable_scope("global"):
         policy_net = GaussianPolicyEstimator(
             NUM_ACTIONS, static_size=INPUT_SIZE, temporal_size=TEMPORAL_SIZE,
-            shared_layer=lambda x: rnn_graph_lstm(x, 32, 1, True)
+            shared_layer=lambda x_t, x: rnn_graph_lstm(x_t, x, 32, 1, True),
         )
         value_net = ValueEstimator(
             static_size=INPUT_SIZE, temporal_size=TEMPORAL_SIZE,
-            shared_layer=lambda x: rnn_graph_lstm(x, 32, 1, True),
-            reuse=True
+            shared_layer=lambda x_t, x: rnn_graph_lstm(x_t, x, 32, 1, True),
+            reuse=True,
+            scale=100.,
+            learning_rate=1e-5
         )
 
     # Global step iterator
@@ -71,7 +77,7 @@ with tf.device("/cpu:0"):
 
     # Create worker graphs
     workers = []
-    for worker_id in xrange(NUM_WORKERS):
+    for worker_id in range(NUM_WORKERS):
         # We only write summaries in one of the workers because they're
         # pretty much identical and writing them on all workers
         # would be a waste of space
@@ -84,7 +90,7 @@ with tf.device("/cpu:0"):
             env=make_env(p, q),
             policy_net=policy_net,
             value_net=value_net,
-            shared_layer=lambda x: rnn_graph_lstm(x, 32, 1, True),
+            shared_layer=lambda x_t, x: rnn_graph_lstm(x_t, x, 32, 1, True),
             global_counter=global_counter,
             discount_factor = 0.99,
             summary_writer=worker_summary_writer,
@@ -97,8 +103,9 @@ with tf.device("/cpu:0"):
     # Used to occasionally save videos for our policy net
     # and write episode rewards to Tensorboard
     pe = PolicyMonitor(
-        env=make_env(p, q),
-        policy_net=policy_net,
+        env=make_eval_env(p, q),
+        global_policy_net=policy_net,
+        state_processor=SolowStateProcessor(),
         summary_writer=summary_writer,
         saver=saver,
         num_actions=NUM_ACTIONS,
@@ -118,17 +125,19 @@ with tf.Session() as sess:
         print("Loading model checkpoint: {}".format(latest_checkpoint))
         saver.restore(sess, latest_checkpoint)
 
+    max_seq_length = 10
+
     # Start worker threads
     worker_threads = []
     for worker in workers:
-        t = threading.Thread(target=lambda worker=worker: worker.run(sess, coord, FLAGS.t_max, always_bootstrap=True))
+        t = threading.Thread(target=lambda worker=worker: worker.run(sess, coord, FLAGS.t_max, always_bootstrap=True, max_seq_length=max_seq_length))
         t.start()
         worker_threads.append(t)
 
     # Start a thread for policy eval task
     monitor_thread = threading.Thread(
         target=lambda: pe.continuous_eval(
-            FLAGS.eval_every, sess, coord, SolowWorker, 5, total_reward_log_file='Solow-%s-%s.json' % (p, q)
+            FLAGS.eval_every, sess, coord, SolowWorker, max_seq_length, total_reward_log_file='Solow-%s-%s.json' % (p, q)
         )
     )
     monitor_thread.start()
