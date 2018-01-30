@@ -397,7 +397,7 @@ class ValueEstimator():
         train ops would set this to false.
     """
 
-    def __init__(self, static_size, temporal_size, shared_layer, static_hidden_size=128, reuse=False, trainable=True, learning_rate=5e-5, num_actions=2, scale=1.):
+    def __init__(self, static_size, temporal_size, shared_layer, static_hidden_size=128, reuse=False, trainable=True, learning_rate=1e-4, num_actions=2, scale=1.):
 
         self.static_size = static_size
         self.temporal_size = temporal_size

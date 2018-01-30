@@ -46,7 +46,7 @@ def make_env(p, q):
 
 
 def make_eval_env(p, q):
-    return gym.envs.make("Solow-%s-%s-finite-v0" % (p, q))
+    return gym.envs.make("Solow-%s-%s-finite-eval-v0" % (p, q))
 
 p = 1
 q = 1
@@ -69,7 +69,6 @@ with tf.device("/cpu:0"):
             shared_layer=lambda x_t, x: rnn_graph_lstm(x_t, x, 32, 1, True),
             reuse=True,
             scale=100.,
-            learning_rate=1e-5
         )
 
     # Global step iterator
@@ -125,7 +124,7 @@ with tf.Session() as sess:
         print("Loading model checkpoint: {}".format(latest_checkpoint))
         saver.restore(sess, latest_checkpoint)
 
-    max_seq_length = 10
+    max_seq_length = 5
 
     # Start worker threads
     worker_threads = []

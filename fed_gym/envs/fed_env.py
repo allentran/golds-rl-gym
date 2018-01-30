@@ -19,6 +19,12 @@ def register_solow_env(p, q):
         max_episode_steps=1024,
         kwargs=dict(p=p, q=q)
     )
+    register(
+        id='Solow-%s-%s-finite-eval-v0' % (p, q),
+        entry_point='fed_gym.envs:SolowEnv',
+        max_episode_steps=1024,
+        kwargs=dict(p=p, q=q, seed=1692)
+    )
 
 
 class TickerEnvForTests(gym.Env):
@@ -157,12 +163,14 @@ class SolowEnv(gym.Env):
     Classic Solow model (no growth or pop growth) with log consumption utility
     States are histories of capital and tech innovation/shock
     """
-    def __init__(self, delta=0.02, sigma=0.1, p=1, q=1, T=None):
+    def __init__(self, delta=0.02, sigma=0.1, p=1, q=1, T=None, seed=None):
         super(SolowEnv, self).__init__()
 
         self.delta = delta
         self.sigma = sigma
         self.alpha = 0.33
+
+        self.seed = seed
 
         self.T = T if T else 2048
 
@@ -233,8 +241,10 @@ class SolowEnv(gym.Env):
 
     def _reset(self):
         self.k = self._k_ss(0.33)
-        self.z = np.random.normal(scale=self.sigma, size=(self.p, ))
         self.e = np.zeros(shape=(self.q, ))
+        if self.seed:
+            np.random.seed(self.seed)
+        self.z = np.random.normal(scale=self.sigma, size=(self.p, ))
         self.es = np.random.normal(0, self.sigma, (self.T, )).tolist()
 
         return np.array([self.k, self.z[-1]]).flatten()
@@ -248,6 +258,8 @@ class SolowSSEnv(SolowEnv):
         self.k = self._k_ss(self.alpha)
         self.z = np.array([0.])
         self.e = 0.
+        if self.seed:
+            np.random.seed(self.seed)
         self.es = np.random.normal(0, self.sigma, (self.T, )).tolist()
 
         return np.array([self.k, self.z]).flatten()
