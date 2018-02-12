@@ -197,13 +197,14 @@ class GaussianWorker(object):
             next_state, reward, done, _ = self.env.step(self.transform_raw_action(*action))
             processed_next_state = self.state_processor.process_state(next_state)
             # Store transition
-            transitions.append(Transition(
-                state=processed_state,
-                action=action,
-                reward=reward,
-                next_state=processed_next_state,
-                done=done)
-            )
+            if len(self.history) >= max_seq_length:
+                transitions.append(Transition(
+                    state=processed_state,
+                    action=action,
+                    reward=reward,
+                    next_state=processed_next_state,
+                    done=done)
+                )
 
             # Increase local and global counters
             local_t = next(self.local_counter)
@@ -331,7 +332,7 @@ class GaussianWorker(object):
             self.policy_net.actions: actions.reshape((-1, self.global_policy_net.num_actions)),
             self.value_net.states: states,
             self.value_net.history: temporal_state_matrix,
-            self.value_net.targets: value_targets.flatten(),
+            self.value_net.targets: value_targets,
         }
 
     def transform_raw_action(self, *raw_actions):

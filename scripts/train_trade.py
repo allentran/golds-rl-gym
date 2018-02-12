@@ -93,7 +93,7 @@ with tf.device("/cpu:0"):
     # and write episode rewards to Tensorboard
     pe = PolicyMonitor(
         env=make_env(),
-        policy_net=policy_net,
+        global_policy_net=policy_net,
         summary_writer=summary_writer,
         saver=saver,
         num_actions=NUM_ACTIONS,
