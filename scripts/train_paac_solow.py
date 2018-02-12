@@ -9,6 +9,7 @@ from fed_gym.agents.paac import environment_creator
 from fed_gym.agents.paac.paac import PAACLearner
 from fed_gym.agents.paac.policy_v_network import PolicyVNetwork
 from fed_gym.envs.fed_env import register_solow_env
+from fed_gym.agents.paac.emulator_runner import SolowRunner
 
 register_solow_env(1, 1)
 logging.basicConfig(stream=sys.stdout, level=logging.INFO)
@@ -29,7 +30,7 @@ def main(args):
 
     network_creator, env_creator = get_network_and_environment_creator(args)
 
-    learner = PAACLearner(network_creator, env_creator, args)
+    learner = PAACLearner(network_creator, env_creator, args, SolowRunner)
 
     setup_kill_signal_handler(learner)
 

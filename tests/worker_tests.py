@@ -120,7 +120,7 @@ class SolowWorkerTest(tf.test.TestCase):
 
             transitions, local_t, global_t, mus, done = w.run_n_steps(n_steps, sess)
             policy_net_loss, value_net_loss, policy_net_summaries, value_net_summaries, preds = w.update(transitions, sess)
-            np.testing.assert_array_almost_equal(np.squeeze(preds['mu']), np.squeeze(mus[::-1]))
+            np.testing.assert_array_almost_equal(np.squeeze(preds['mu']), np.squeeze(mus[::-1][:n_steps]))
 
             self.assertEqual(len(transitions), n_steps)
             self.assertIsNotNone(policy_net_loss)
@@ -223,7 +223,7 @@ class GridWorkerTests(tf.test.TestCase):
             policy_net_loss, value_net_loss, policy_net_summaries, value_net_summaries, preds = w.update(
                 transitions, sess, max_seq_length=5
             )
-            np.testing.assert_array_almost_equal(np.squeeze(preds['probs']), np.squeeze(probs[::-1]))
+            np.testing.assert_array_almost_equal(np.squeeze(preds['probs']), np.squeeze(probs[::-1][:n_steps]))
             self.assertEqual(len(transitions), n_steps)
             self.assertIsNotNone(policy_net_loss)
             self.assertIsNotNone(value_net_loss)
@@ -329,7 +329,7 @@ class TickerTraderWorkerTests(tf.test.TestCase):
             policy_net_loss, value_net_loss, policy_net_summaries, value_net_summaries, preds = w.update(
                 transitions, sess, max_seq_length=5
             )
-            np.testing.assert_array_almost_equal(np.squeeze(preds['mu']), np.squeeze(mus[::-1]))
+            np.testing.assert_array_almost_equal(np.squeeze(preds['mu']), np.squeeze(mus[::-1][:n_steps]))
             self.assertEqual(len(transitions), n_steps)
             self.assertIsNotNone(policy_net_loss)
             self.assertIsNotNone(value_net_loss)

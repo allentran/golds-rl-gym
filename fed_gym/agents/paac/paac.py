@@ -6,14 +6,14 @@ from fed_gym.agents.a3c.estimators import SolowStateProcessor
 from .actor_learner import *
 import logging
 
-from ..a3c.worker import sigmoid
+from .emulator_runner import EmulatorRunner
 from .runners import Runners
 import numpy as np
 
 
 class PAACLearner(ActorLearner):
-    def __init__(self, network_creator, environment_creator, args):
-        super(PAACLearner, self).__init__(network_creator, environment_creator, args)
+    def __init__(self, network_creator, environment_creator, args, emulator_class):
+        super(PAACLearner, self).__init__(network_creator, environment_creator, args, emulator_class)
         self.workers = args.emulator_workers
         self.rnn_length = args.rnn_length
         self.state_processor = SolowStateProcessor()
@@ -77,7 +77,7 @@ class PAACLearner(ActorLearner):
             (np.zeros((self.emulator_counts, self.num_actions), dtype=np.float32))
         ]
 
-        self.runners = Runners(self.emulators, self.workers, variables)
+        self.runners = Runners(self.emulators, self.workers, variables, self.emulator_class)
         self.runners.start()
         shared_states, shared_histories, shared_rewards, shared_episode_over, shared_actions = self.runners.get_shared_variables()
 
@@ -105,7 +105,7 @@ class PAACLearner(ActorLearner):
             for t in range(max_local_steps):
                 next_actions, readouts_v_t = self.__choose_next_actions(shared_states, shared_histories)
                 for z in range(next_actions.shape[0]):
-                    shared_actions[z] = sigmoid(next_actions[z])
+                    shared_actions[z] = next_actions[z]
 
                 actions[t] = next_actions
                 values[t] = readouts_v_t

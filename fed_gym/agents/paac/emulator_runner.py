@@ -2,6 +2,7 @@ from multiprocessing import Process
 
 import numpy as np
 
+from ..a3c.worker import sigmoid
 from fed_gym.agents.a3c.estimators import SolowStateProcessor
 
 
@@ -24,6 +25,10 @@ class EmulatorRunner(Process):
         self.state_processor = SolowStateProcessor()
 
         self.rnn_length = self.variables[self.HISTORY_IDX].shape[1]
+
+    @staticmethod
+    def transform_actions(actions):
+        return actions
 
     def run(self):
         super(EmulatorRunner, self).run()
@@ -60,3 +65,9 @@ class EmulatorRunner(Process):
 
             count += 1
             self.barrier.put(True)
+
+
+class SolowRunner(EmulatorRunner):
+    @staticmethod
+    def transform_actions(actions):
+        return sigmoid(actions)

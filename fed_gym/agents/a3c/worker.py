@@ -190,7 +190,7 @@ class GaussianWorker(object):
     def run_n_steps(self, n, sess, max_seq_length=5, stochastic=True):
         transitions = []
         self.debug = []
-        for _ in range(n):
+        while len(transitions) < n:
             # Take a step
             processed_state = self.state_processor.process_state(self.state)
             action = self.get_action_from_policy(processed_state, self.history[-max_seq_length:], sess, stochastic)

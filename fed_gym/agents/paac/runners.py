@@ -3,20 +3,18 @@ from multiprocessing import Queue
 from multiprocessing.sharedctypes import RawArray
 from ctypes import c_uint, c_float, c_double
 
-from .emulator_runner import EmulatorRunner
-
 
 class Runners(object):
 
     NUMPY_TO_C_DTYPE = {np.float32: c_float, np.float64: c_double, np.uint8: c_uint}
 
-    def __init__(self, emulators, workers, variables):
+    def __init__(self, emulators, workers, variables, emulator_class):
         self.variables = [self._get_shared(var) for var in variables]
         self.workers = workers
         self.queues = [Queue() for _ in range(workers)]
         self.barrier = Queue()
 
-        self.runners = [EmulatorRunner(i, emulators, vars, self.queues[i], self.barrier) for i, (emulators, vars) in
+        self.runners = [emulator_class(i, emulators, vars, self.queues[i], self.barrier) for i, (emulators, vars) in
                         enumerate(zip(np.split(emulators, workers), zip(*[np.split(var, workers) for var in self.variables])))]
 
     def _get_shared(self, array):
