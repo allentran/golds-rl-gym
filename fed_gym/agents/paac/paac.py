@@ -104,8 +104,9 @@ class PAACLearner(ActorLearner):
             max_local_steps = self.max_local_steps
             for t in range(max_local_steps):
                 next_actions, readouts_v_t = self.__choose_next_actions(shared_states, shared_histories)
+                transformed_actions = self.emulator_class.transform_actions_for_env(next_actions)
                 for z in range(next_actions.shape[0]):
-                    shared_actions[z] = next_actions[z]
+                    shared_actions[z] = transformed_actions[z]
 
                 actions[t] = next_actions
                 values[t] = readouts_v_t

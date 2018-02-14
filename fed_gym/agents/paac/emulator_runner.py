@@ -27,7 +27,7 @@ class EmulatorRunner(Process):
         self.rnn_length = self.variables[self.HISTORY_IDX].shape[1]
 
     @staticmethod
-    def transform_actions(actions):
+    def transform_actions_for_env(actions):
         return actions
 
     def run(self):
@@ -69,5 +69,5 @@ class EmulatorRunner(Process):
 
 class SolowRunner(EmulatorRunner):
     @staticmethod
-    def transform_actions(actions):
+    def transform_actions_for_env(actions):
         return sigmoid(actions)

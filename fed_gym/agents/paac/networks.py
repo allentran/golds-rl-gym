@@ -107,17 +107,16 @@ class Network(object):
         self.clip_norm_type = conf['clip_norm_type']
         self.device = conf['device']
         self.static_size = conf['static_size']
-        self.temporal_size = conf['temporal_size']
+        self.entropy_beta = conf['entropy_regularisation_strength']
         self.scale = conf['scale']
 
         with tf.device(self.device):
             with tf.name_scope(self.name):
-                self.states = tf.placeholder(shape=(None, self.static_size), dtype=tf.float32, name="X")
-                self.history = tf.placeholder(shape=(None, None, self.temporal_size), dtype=tf.float32, name="X_t")
-                self.actions = tf.placeholder(shape=(None, self.num_actions), dtype=tf.float32, name="actions")
+                self.critic_target = tf.placeholder("float32", (None, ), name='target')
+                self.advantages = tf.placeholder("float", (None, ), name='advantage')
 
-                # The output layer
-                self.output = None
+        # The output layer
+        self.output = None
 
     def init(self, checkpoint_folder, saver, session):
         last_saving_step = 0
@@ -134,3 +133,37 @@ class Network(object):
                 saver.restore(session, path)
                 last_saving_step = int(path[path.rindex('-')+1:])
         return last_saving_step
+
+
+class FlatNetwork(Network):
+    def __init__(self, conf):
+        super().__init__(conf)
+        self.temporal_size = conf['temporal_size']
+
+        with tf.device(self.device):
+            with tf.name_scope(self.name):
+                self.actions = tf.placeholder(shape=(None, self.num_actions), dtype=tf.float32, name="actions")
+                self.states = tf.placeholder(shape=(None, self.static_size), dtype=tf.float32, name="X")
+                self.history = tf.placeholder(shape=(None, None, self.temporal_size), dtype=tf.float32, name="X_t")
+
+
+class ConvNetwork(Network):
+    def __init__(self, conf):
+        super().__init__(conf)
+
+        self.height = conf['height']
+        self.width = conf['width']
+        self.channels = conf['channels']
+        self.filters = conf['filters']
+        self.conv_layers = conf['conv_layers']
+
+        with tf.device(self.device):
+            with tf.name_scope(self.name):
+                # action idxs are gather_nd tuples [(batch_idx, height_idx, width_idx, action_idx)]
+                self.action_idxs = tf.placeholder(shape=(None, 4), dtype=tf.int32, name="actions")
+                self.state = tf.placeholder(
+                    shape=(None, self.height, self.width, self.channels), dtype=tf.float32, name="X"
+                )
+                self.history = tf.placeholder(
+                    shape=(None, None, self.height, self.width, self.channels), dtype=tf.float32, name="X_t"
+                )
