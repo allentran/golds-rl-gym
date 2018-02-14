@@ -7,7 +7,7 @@ import copy
 
 from fed_gym.agents.paac import environment_creator
 from fed_gym.agents.paac.paac import PAACLearner
-from fed_gym.agents.paac.policy_v_network import PolicyVNetwork
+from fed_gym.agents.paac.policy_v_network import FlatPolicyVNetwork
 from fed_gym.envs.fed_env import register_solow_env
 from fed_gym.agents.paac.emulator_runner import SolowRunner
 
@@ -54,7 +54,7 @@ def setup_kill_signal_handler(learner):
 
 
 def get_network_and_environment_creator(args, random_seed=3):
-    env_creator = environment_creator.EnvironmentCreator(1, 1)
+    env_creator = environment_creator.SolowEnvironmentCreator(1, 1)
     num_actions = env_creator.num_actions
     args.num_actions = num_actions
     args.random_seed = random_seed
@@ -63,6 +63,7 @@ def get_network_and_environment_creator(args, random_seed=3):
         'num_actions': num_actions,
         'entropy_regularisation_strength': args.entropy_regularisation_strength,
         'device': args.device,
+        'scale': args.scale,
         'clip_norm': args.clip_norm,
         'clip_norm_type': args.clip_norm_type,
         'static_size': args.static_size,
@@ -75,7 +76,7 @@ def get_network_and_environment_creator(args, random_seed=3):
         nonlocal network_conf
         copied_network_conf = copy.copy(network_conf)
         copied_network_conf['name'] = name
-        return PolicyVNetwork(copied_network_conf)
+        return FlatPolicyVNetwork(copied_network_conf)
 
     return network_creator, env_creator
 
@@ -98,6 +99,7 @@ def get_arg_parser():
     parser.add_argument('-ew', '--emulator_workers', default=8, type=int, help="The amount of emulator workers per agent. Default is 8.", dest="emulator_workers")
     parser.add_argument('-df', '--debugging_folder', default='logs/', type=str, help="Folder where to save the debugging information.", dest="debugging_folder")
     parser.add_argument('-rs', '--random_start', default=True, type=bool_arg, help="Whether or not to start with 30 noops for each env. Default True", dest="random_start")
+    parser.add_argument('--scale', default=100., type=float)
     parser.add_argument('--rnn-length', default=5, type=int)
     parser.add_argument('--static-size', default=2, type=int)
     parser.add_argument('--temporal-size', default=2, type=int)

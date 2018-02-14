@@ -1,9 +1,13 @@
-import math
-
 import numpy as np
 
 from tensorflow.contrib import keras
 import tensorflow as tf
+
+
+def make_cell(hidden_size, is_training):
+    return tf.nn.rnn_cell.GRUCell(
+        hidden_size, reuse=not is_training
+    )
 
 
 def true_length(sequence):
@@ -15,13 +19,8 @@ def true_length(sequence):
 
 def rnn_graph_lstm(temporal_inputs, static_inputs, hidden_size, num_layers, is_training):
 
-    def make_cell():
-      return tf.nn.rnn_cell.GRUCell(
-          hidden_size, reuse=not is_training
-      )
-
     cell = tf.nn.rnn_cell.MultiRNNCell(
-        [make_cell() for _ in range(num_layers)])
+        [make_cell(hidden_size, is_training) for _ in range(num_layers)])
     outputs, state = tf.nn.dynamic_rnn(cell, temporal_inputs, dtype=tf.float32, sequence_length=true_length(temporal_inputs))
     rnn_last = state[-1]
 

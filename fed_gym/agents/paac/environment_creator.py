@@ -1,7 +1,7 @@
 import gym
 
 
-class EnvironmentCreator(object):
+class SolowEnvironmentCreator(object):
 
     def __init__(self, p, q):
         """
@@ -13,4 +13,6 @@ class EnvironmentCreator(object):
         self.create_environment = lambda: gym.envs.make("Solow-%s-%s-finite-v0" % (p, q))
 
 
-
+class SwarmEnvironmentCreator(object):
+    def __init__(self) -> None:
+        super().__init__()

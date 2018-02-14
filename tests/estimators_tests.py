@@ -2,7 +2,87 @@ import numpy as np
 import tensorflow as tf
 
 from fed_gym.agents.a3c.estimators import GaussianPolicyEstimator, ValueEstimator, rnn_graph_lstm, DiscreteAndContPolicyEstimator, DiscretePolicyEstimator
+from fed_gym.agents.paac.policy_v_network import ConvPolicyVNetwork
 
+
+class ConvNetworkTest(tf.test.TestCase):
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+
+        cls.batch_size = 16
+        cls.num_actions = 3
+        cls.input_size = 5
+        cls.temporal_size = 7
+        cls.T = 11
+
+        np.random.seed(1692)
+
+        cls.states = np.random.random((cls.batch_size, cls.input_size))
+        cls.temporal_states = np.random.random((cls.batch_size, cls.T, cls.temporal_size))
+        cls.advantage = np.random.random((cls.batch_size, )).astype('float32')
+        cls.discrete_actions = np.random.randint(0, cls.num_actions + 1, size=(cls.batch_size, 4)).astype('int32')
+
+    def policy_predict_test(self):
+
+        estimator = ConvPolicyVNetwork(
+            {
+                'name': 'test_conv_network',
+                'num_actions': self.num_actions,
+                'clip_norm': 40.,
+                'clip_norm_type': 'global',
+                'device': '/cpu:0',
+                'static_size': None,
+                'entropy_regularisation_strength': 0.,
+                'scale': 1.,
+                'height': 32,
+                'width': 32,
+                'channels': 3,
+                'filters': 5,
+                'conv_layers': 2
+            }
+        )
+
+        action_idxs = np.hstack([
+            np.arange(self.batch_size)[:, None],
+            np.random.randint(0, estimator.height, self.batch_size)[:, None],
+            np.random.randint(0, estimator.width, self.batch_size)[:, None],
+            np.random.randint(0, self.num_actions, self.batch_size)[:, None],
+        ])
+        state = np.random.uniform(
+            0., 1.,
+            (self.batch_size, estimator.height, estimator.width, estimator.channels),
+        )
+        history = np.random.uniform(
+            0., 1.,
+            (self.batch_size, self.T, estimator.height, estimator.width, estimator.channels),
+        )
+        with self.test_session() as sess:
+            sess.run(tf.global_variables_initializer())
+
+            feed_dict = {
+                estimator.state: state,
+                estimator.history: history,
+                estimator.advantages: np.ones_like(self.advantage),
+                estimator.action_idxs: action_idxs,
+                estimator.critic_target: np.ones_like(self.advantage)
+            }
+            pred = sess.run(
+                {
+                    'probs': estimator.probs,
+                    'policy_loss': estimator.policy_loss,
+                    'vs': estimator.vs,
+                    'critic_loss': estimator.critic_loss
+                },
+                feed_dict
+            )
+
+        self.assertEqual(pred['probs'].shape, (self.batch_size, self.num_actions))
+        np.testing.assert_almost_equal(pred['probs'], 0.33, decimal=1)
+        self.assertEqual(pred['policy_loss'].shape, ())
+        self.assertEqual(pred['vs'].shape, (self.batch_size, ))
+        self.assertEqual(pred['critic_loss'].shape, (self.batch_size, ))
 
 class DiscretePolicyEstimatorTest(tf.test.TestCase):
 
