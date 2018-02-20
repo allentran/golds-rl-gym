@@ -70,10 +70,9 @@ class Swarm(gym.Env):
         N = x.shape[0]
         Na = xa.shape[0]
         v = np.zeros((N,2))
-        energy = 0.
+        v[: ,0] = U
+        v[:, 1] = G
         for j in range(N):
-            v[j][0] = U
-            v[j][1] = G
             for k in range(N):
                 if k != j:
                     dist = ((x[k][0] - x[j][0]) ** 2 + (x[k][1] - x[j][1]) ** 2) ** 0.5
@@ -83,7 +82,7 @@ class Swarm(gym.Env):
                 dist = ((xa[k][0] - x[j][0]) ** 2 + (xa[k][1] - x[j][1]) ** 2) ** 0.5
                 v[j][0] += Swarm.s(dist, F, L) * (xa[k][0] - x[j][0]) / (dist + 0.000001)
                 v[j][1] += Swarm.s(dist, F, L) * (xa[k][1] - x[j][1]) / (dist + 0.000001)
-            energy += v[j][0] ** 2 + v[j][1] ** 2
+        energy = (v ** 2).sum()
         return v, energy
 
     @staticmethod
