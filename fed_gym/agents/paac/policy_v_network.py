@@ -61,7 +61,7 @@ class ConvPolicyVNetwork(ConvNetwork):
                     )
                     mus = tf.reshape(mus, (n_batches, self.height, self.width, self.num_actions))
                     sigmas = tf.layers.dense(
-                        actions, self.height * self.width * self.num_actions * 2, activation=tf.nn.sigmoid
+                        actions, self.height * self.width * self.num_actions, activation=tf.nn.sigmoid
                     )
                     sigmas = tf.reshape(sigmas, (n_batches, self.height, self.width, self.num_actions))
 
@@ -71,9 +71,10 @@ class ConvPolicyVNetwork(ConvNetwork):
                 normal_dist = tf.distributions.Normal(self.mus, self.sigmas)
 
                 log_l = normal_dist.log_prob(self.actions)
-
                 self.entropy = normal_dist.entropy()
-
+                if self.num_actions > 1:
+                    log_l = tf.reduce_sum(log_l, axis=-1)
+                    self.entropy = tf.reduce_sum(self.entropy, axis=-1)
                 self.policy_loss = - tf.reduce_mean(log_l * self.advantages + self.entropy_beta * self.entropy)
 
                 with tf.variable_scope('v_s'):

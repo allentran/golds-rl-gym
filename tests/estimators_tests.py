@@ -23,6 +23,7 @@ class ConvNetworkTest(tf.test.TestCase):
         cls.temporal_states = np.random.random((cls.batch_size, cls.T, cls.temporal_size))
         cls.advantage = np.random.random((cls.batch_size, )).astype('float32')
         cls.discrete_actions = np.random.randint(0, cls.num_actions + 1, size=(cls.batch_size, 4)).astype('int32')
+        cls.cont_actions = np.random.uniform(size=(cls.batch_size, cls.num_actions))
 
     def policy_predict_test(self):
 
@@ -44,11 +45,10 @@ class ConvNetworkTest(tf.test.TestCase):
             }
         )
 
-        action_idxs = np.hstack([
+        state_idxs = np.hstack([
             np.arange(self.batch_size)[:, None],
             np.random.randint(0, estimator.height, self.batch_size)[:, None],
             np.random.randint(0, estimator.width, self.batch_size)[:, None],
-            np.random.randint(0, self.num_actions, self.batch_size)[:, None],
         ])
         state = np.random.uniform(
             0., 1.,
@@ -64,13 +64,15 @@ class ConvNetworkTest(tf.test.TestCase):
             feed_dict = {
                 estimator.state: state,
                 estimator.history: history,
+                estimator.actions: self.cont_actions,
                 estimator.advantages: np.ones_like(self.advantage),
-                estimator.action_idxs: action_idxs,
+                estimator.state_idxs: state_idxs,
                 estimator.critic_target: np.ones_like(self.advantage)
             }
             pred = sess.run(
                 {
-                    'probs': estimator.probs,
+                    'mus': estimator.mus,
+                    'sigmas': estimator.sigmas,
                     'policy_loss': estimator.policy_loss,
                     'vs': estimator.vs,
                     'critic_loss': estimator.critic_loss
@@ -78,8 +80,8 @@ class ConvNetworkTest(tf.test.TestCase):
                 feed_dict
             )
 
-        self.assertEqual(pred['probs'].shape, (self.batch_size, self.num_actions))
-        np.testing.assert_almost_equal(pred['probs'], 0.33, decimal=1)
+        self.assertEqual(pred['mus'].shape, (self.batch_size, self.num_actions))
+        self.assertEqual(pred['sigmas'].shape, (self.batch_size, self.num_actions))
         self.assertEqual(pred['policy_loss'].shape, ())
         self.assertEqual(pred['vs'].shape, (self.batch_size, ))
         self.assertEqual(pred['critic_loss'].shape, (self.batch_size, ))

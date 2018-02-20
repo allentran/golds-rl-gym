@@ -160,7 +160,7 @@ class ConvNetwork(Network):
         with tf.device(self.device):
             with tf.name_scope(self.name):
                 # state idxs are gather_nd tuples [(batch_idx, height_idx, width_idx)]
-                self.state_idxs = tf.placeholder(shape=(None, 4), dtype=tf.int32, name="state_idxs")
+                self.state_idxs = tf.placeholder(shape=(None, 3), dtype=tf.int32, name="state_idxs")
                 self.actions = tf.placeholder(shape=(None, self.num_actions), dtype=tf.float32, name="actions")
                 self.state = tf.placeholder(
                     shape=(None, self.height, self.width, self.channels), dtype=tf.float32, name="X"
