@@ -5,7 +5,8 @@ import scipy.signal
 import numpy as np
 import tensorflow as tf
 
-from .estimators import ValueEstimator, GaussianPolicyEstimator, DiscreteAndContPolicyEstimator, DiscretePolicyEstimator, SolowStateProcessor, TickerTraderStateProcessor
+from .estimators import ValueEstimator, GaussianPolicyEstimator, DiscreteAndContPolicyEstimator, DiscretePolicyEstimator
+from fed_gym.agents.state_processors import TickerTraderStateProcessor, SolowStateProcessor
 
 Transition = collections.namedtuple(
     "Transition",

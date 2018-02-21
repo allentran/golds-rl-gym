@@ -86,6 +86,7 @@ class ConvNetworkTest(tf.test.TestCase):
         self.assertEqual(pred['vs'].shape, (self.batch_size, ))
         self.assertEqual(pred['critic_loss'].shape, (self.batch_size, ))
 
+
 class DiscretePolicyEstimatorTest(tf.test.TestCase):
 
     @classmethod

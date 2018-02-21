@@ -4,7 +4,7 @@ import numpy as np
 import gym
 
 
-class Swarm(gym.Env):
+class SwarmEnv(gym.Env):
     N_LOCUSTS = 80 # number of locusts
     N_AGENTS = 10 # number of locust agents
 
@@ -49,9 +49,9 @@ class Swarm(gym.Env):
     @staticmethod
     def x_update(x, v, dt, noise):
         N = v.shape[0]
-        x, v = Swarm.xv_cutoff(x,v)
+        x, v = SwarmEnv.xv_cutoff(x, v)
         x += dt * v + noise * np.random.randn(N, 2)
-        x, v = Swarm.xv_cutoff(x,v)
+        x, v = SwarmEnv.xv_cutoff(x, v)
         return x
 
     @staticmethod
@@ -76,12 +76,12 @@ class Swarm(gym.Env):
             for k in range(N):
                 if k != j:
                     dist = ((x[k][0] - x[j][0]) ** 2 + (x[k][1] - x[j][1]) ** 2) ** 0.5
-                    v[j][0] += Swarm.s(dist, F, L) * (x[k][0] - x[j][0]) / (dist + 0.000001)
-                    v[j][1] += Swarm.s(dist, F, L) * (x[k][1] - x[j][1]) / (dist + 0.000001)
+                    v[j][0] += SwarmEnv.s(dist, F, L) * (x[k][0] - x[j][0]) / (dist + 0.000001)
+                    v[j][1] += SwarmEnv.s(dist, F, L) * (x[k][1] - x[j][1]) / (dist + 0.000001)
             for k in range(Na):
                 dist = ((xa[k][0] - x[j][0]) ** 2 + (xa[k][1] - x[j][1]) ** 2) ** 0.5
-                v[j][0] += Swarm.s(dist, F, L) * (xa[k][0] - x[j][0]) / (dist + 0.000001)
-                v[j][1] += Swarm.s(dist, F, L) * (xa[k][1] - x[j][1]) / (dist + 0.000001)
+                v[j][0] += SwarmEnv.s(dist, F, L) * (xa[k][0] - x[j][0]) / (dist + 0.000001)
+                v[j][1] += SwarmEnv.s(dist, F, L) * (xa[k][1] - x[j][1]) / (dist + 0.000001)
         energy = (v ** 2).sum()
         return v, energy
 

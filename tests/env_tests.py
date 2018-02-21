@@ -7,7 +7,7 @@ from fed_gym.envs import fed_env, multiagent
 
 class SwarmTests(unittest.TestCase):
     def run_env_test(self):
-        env = multiagent.Swarm()
+        env = multiagent.SwarmEnv()
         env.reset()
         for _ in range(20):
             state, reward, done, _ = env.step(np.random.uniform(size=(env.N_AGENTS, 2)))

@@ -2,21 +2,19 @@ import time
 from multiprocessing.sharedctypes import RawArray
 from ctypes import c_float
 
-from fed_gym.agents.a3c.estimators import SolowStateProcessor
 from .actor_learner import *
 import logging
 
-from .emulator_runner import EmulatorRunner
 from .runners import Runners
 import numpy as np
 
 
 class PAACLearner(ActorLearner):
-    def __init__(self, network_creator, environment_creator, args, emulator_class):
+    def __init__(self, network_creator, environment_creator, args, emulator_class, state_processor):
         super(PAACLearner, self).__init__(network_creator, environment_creator, args, emulator_class)
         self.workers = args.emulator_workers
         self.rnn_length = args.rnn_length
-        self.state_processor = SolowStateProcessor()
+        self.state_processor = state_processor
 
     @staticmethod
     def choose_next_actions(network, num_actions, states, histories, session):

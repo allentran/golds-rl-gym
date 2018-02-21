@@ -5,7 +5,8 @@ import tensorflow as tf
 import tempfile
 
 from fed_gym.agents.a3c.policy_monitor import PolicyMonitor
-from fed_gym.agents.a3c.estimators import ValueEstimator, GaussianPolicyEstimator, rnn_graph_lstm, SolowStateProcessor
+from fed_gym.agents.a3c.estimators import ValueEstimator, GaussianPolicyEstimator, rnn_graph_lstm
+from fed_gym.agents.state_processors import SolowStateProcessor
 from fed_gym.agents.a3c.worker import SolowWorker
 
 

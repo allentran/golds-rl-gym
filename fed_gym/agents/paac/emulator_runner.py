@@ -3,7 +3,7 @@ from multiprocessing import Process
 import numpy as np
 
 from ..a3c.worker import sigmoid
-from fed_gym.agents.a3c.estimators import SolowStateProcessor
+from fed_gym.agents.state_processors import SolowStateProcessor
 
 
 class EmulatorRunner(Process):
@@ -22,7 +22,7 @@ class EmulatorRunner(Process):
         self.histories = [[] for _ in range(len(emulators))]
         self.queue = queue
         self.barrier = barrier
-        self.state_processor = SolowStateProcessor()
+        self.state_processor = None
 
         self.rnn_length = self.variables[self.HISTORY_IDX].shape[1]
 
@@ -68,6 +68,17 @@ class EmulatorRunner(Process):
 
 
 class SolowRunner(EmulatorRunner):
+
+    def __init__(self, id, emulators, variables, queue, barrier):
+        super().__init__(id, emulators, variables, queue, barrier)
+        self.state_processor = SolowStateProcessor()
+
+    @staticmethod
+    def transform_actions_for_env(actions):
+        return sigmoid(actions)
+
+
+class SwarmRunner(EmulatorRunner):
     @staticmethod
     def transform_actions_for_env(actions):
         return sigmoid(actions)

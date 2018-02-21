@@ -17,3 +17,9 @@ register(
     entry_point='fed_gym.envs:SolowSSEnv',
     max_episode_steps=1024
 )
+
+register(
+    id='Swarm-v0',
+    entry_point='fed_gym.envs:SwarmEnv',
+)
+
