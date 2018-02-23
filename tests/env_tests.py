@@ -23,14 +23,6 @@ class SwarmTests(unittest.TestCase):
         self.assertLess(reward, 0.)
         self.assertFalse(done)
 
-    def histogram_test(self):
-        from fed_gym.agents.state_processors import SwarmStateProcessor
-        x = np.random.uniform(size=(80, 2))
-        xa = np.random.uniform(size=(10, 2))
-        print(np.amin(x, axis=0), x.min(axis=0))
-        assert False
-        #SwarmStateProcessor.hist_calc()
-
 
 class TickerEnvTests(unittest.TestCase):
 
