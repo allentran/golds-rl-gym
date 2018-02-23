@@ -11,15 +11,13 @@ class ConvPolicyVNetwork(ConvNetwork):
         with tf.device(conf['device']):
             with tf.name_scope(self.name):
                 t = tf.shape(self.history)[1]
-                n_batches = tf.shape(self.state)[0]
+                n_batches = tf.shape(self.states)[0]
                 final_height = int(self.height / (2 ** self.conv_layers))
                 final_width = int(self.width / (2 ** self.conv_layers))
 
-                state_idxs = self.action_idxs[:, :-1]
-
                 with tf.variable_scope('process_input'):
                     cnn_history = tf.reshape(self.history, (-1, self.height, self.width, self.channels))
-                    cnn_state = self.state
+                    cnn_state = self.states
                     for idx in range(self.conv_layers):
                         conv = tf.layers.Conv2D(
                             self.filters,
@@ -56,33 +54,39 @@ class ConvPolicyVNetwork(ConvNetwork):
                 with tf.variable_scope('policy'):
                     actions = tf.layers.dense(self.processed_state, 2 * self.fc_hidden, activation=tf.nn.relu)
                     actions = tf.layers.dense(
-                        actions, self.height * self.width * self.num_actions, activation=tf.nn.relu
+                        actions, self.height * self.width * self.num_actions * 2, activation=tf.nn.relu
                     )
-                    actions = tf.layers.dense(
-                        actions, self.height * self.width * self.num_actions, activation=tf.nn.relu
+                    mus = tf.layers.dense(
+                        actions, self.height * self.width * self.num_actions, activation=tf.nn.tanh
                     )
-                    actions = tf.reshape(actions, (n_batches, self.height, self.width, self.num_actions))
-                    action_probs = tf.nn.softmax(actions)
+                    mus = tf.reshape(mus, (n_batches, self.height, self.width, self.num_actions))
+                    sigmas = tf.layers.dense(
+                        actions, self.height * self.width * self.num_actions, activation=tf.nn.sigmoid
+                    )
+                    sigmas = tf.reshape(sigmas, (n_batches, self.height, self.width, self.num_actions))
 
-                self.probs = tf.gather_nd(action_probs, state_idxs)
-                selected_probs = tf.gather_nd(action_probs, self.action_idxs)
-                log_probs = tf.log(selected_probs + tf.keras.backend.epsilon())
+                agent_positions = tf.concat([tf.range(n_batches)[:, None], self.agent_positions], axis=-1)
 
-                self.entropy = - tf.reduce_sum(
-                    self.probs * tf.log(self.probs+ tf.keras.backend.epsilon()),
-                    axis=-1
-                )
+                self.mu = tf.gather_nd(mus, agent_positions)
+                self.sigma = tf.gather_nd(sigmas, agent_positions)
 
-                self.policy_loss = - tf.reduce_mean(log_probs * self.advantages + self.entropy_beta * self.entropy)
+                normal_dist = tf.distributions.Normal(self.mu, self.sigma)
+
+                log_l = normal_dist.log_prob(self.actions)
+                self.entropy = normal_dist.entropy()
+                if self.num_actions > 1:
+                    log_l = tf.reduce_sum(log_l, axis=-1)
+                    self.entropy = tf.reduce_sum(self.entropy, axis=-1)
+                self.policy_loss = - tf.reduce_mean(log_l * self.advantages + self.entropy_beta * self.entropy)
 
                 with tf.variable_scope('v_s'):
                     vs = tf.layers.dense(self.processed_state, self.fc_hidden * 2, activation=tf.nn.relu)
                     vs = tf.layers.dense(vs, self.fc_hidden, activation=tf.nn.relu)
-                    vs = tf.layers.dense(vs, self.height * self.width, activation=tf.nn.relu)
-                    vs = tf.reshape(vs, (n_batches, self.height, self.width))
+                    vs = tf.layers.dense(vs, self.height * self.width, activation=None)
+                    vs = self.scale * tf.reshape(vs, (n_batches, self.height, self.width))
 
-                self.vs = tf.gather_nd(vs, state_idxs)
-                self.critic_loss = tf.squared_difference(self.vs, self.critic_target)
+                self.vs = tf.gather_nd(vs, agent_positions)
+                self.critic_loss = tf.squared_difference(self.vs, self.critic_target) / self.scale
                 self.critic_loss_mean = tf.reduce_mean(0.25 * self.critic_loss, name='mean_critic_loss')
 
                 # Loss scaling is used because the learning rate was initially runed tuned to be used with

@@ -4,7 +4,7 @@ import numpy as np
 import gym
 
 
-class Swarm(gym.Env):
+class SwarmEnv(gym.Env):
     N_LOCUSTS = 80 # number of locusts
     N_AGENTS = 10 # number of locust agents
 
@@ -18,13 +18,18 @@ class Swarm(gym.Env):
     L = 10
     dt = 0.05 # time step for equations of motion
 
+    N_BURN_IN = 10
+
     def __init__(self) -> None:
         super().__init__()
 
         self.states = None
 
-    def _step(self, v_action):
+    def _step(self, v_action, add_wind=True):
         x, xa = self.states
+
+        if add_wind:
+            v_action[:, 0] += self.WIND_SPEED
 
         xa = self.x_update(xa, v_action, self.dt, self.NOISE) # next state of robots
         v, reward = self.v_calculate(x, xa, self.F, self.L, self.WIND_SPEED, self.GRAVITY) # reward is energy, we want it to decrease
@@ -32,12 +37,17 @@ class Swarm(gym.Env):
 
         self.states = [x, xa]
 
-        return self.states, reward, reward <= 0, {}
+        return self.states, reward, reward >= 0, {}
 
     def _reset(self):
         x = np.random.rand(self.N_LOCUSTS, 2)
         xa = np.random.rand(self.N_AGENTS, 2)
         self.states = [x, xa]
+
+        random_actions = np.random.normal(size=(self.N_BURN_IN, self.N_AGENTS, 2))
+        for ii in range(self.N_BURN_IN):
+            self.step(random_actions[ii])
+
         return self.states
 
     @staticmethod
@@ -49,9 +59,9 @@ class Swarm(gym.Env):
     @staticmethod
     def x_update(x, v, dt, noise):
         N = v.shape[0]
-        x, v = Swarm.xv_cutoff(x,v)
+        x, v = SwarmEnv.xv_cutoff(x, v)
         x += dt * v + noise * np.random.randn(N, 2)
-        x, v = Swarm.xv_cutoff(x,v)
+        x, v = SwarmEnv.xv_cutoff(x, v)
         return x
 
     @staticmethod
@@ -70,36 +80,18 @@ class Swarm(gym.Env):
         N = x.shape[0]
         Na = xa.shape[0]
         v = np.zeros((N,2))
-        energy = 0.
+        v[:, 0] = U
+        v[:, 1] = G
         for j in range(N):
-            v[j][0] = U
-            v[j][1] = G
             for k in range(N):
                 if k != j:
                     dist = ((x[k][0] - x[j][0]) ** 2 + (x[k][1] - x[j][1]) ** 2) ** 0.5
-                    v[j][0] += Swarm.s(dist, F, L) * (x[k][0] - x[j][0]) / (dist + 0.000001)
-                    v[j][1] += Swarm.s(dist, F, L) * (x[k][1] - x[j][1]) / (dist + 0.000001)
+                    v[j][0] += SwarmEnv.s(dist, F, L) * (x[k][0] - x[j][0]) / (dist + 0.000001)
+                    v[j][1] += SwarmEnv.s(dist, F, L) * (x[k][1] - x[j][1]) / (dist + 0.000001)
             for k in range(Na):
                 dist = ((xa[k][0] - x[j][0]) ** 2 + (xa[k][1] - x[j][1]) ** 2) ** 0.5
-                v[j][0] += Swarm.s(dist, F, L) * (xa[k][0] - x[j][0]) / (dist + 0.000001)
-                v[j][1] += Swarm.s(dist, F, L) * (xa[k][1] - x[j][1]) / (dist + 0.000001)
-            energy += v[j][0] ** 2 + v[j][1] ** 2
-        return v, energy
+                v[j][0] += SwarmEnv.s(dist, F, L) * (xa[k][0] - x[j][0]) / (dist + 0.000001)
+                v[j][1] += SwarmEnv.s(dist, F, L) * (xa[k][1] - x[j][1]) / (dist + 0.000001)
+        energy = (v ** 2).sum()
+        return v, -energy
 
-    @staticmethod
-    def hist_calc(x, Nsize):
-        N = x.shape[0]
-        u = np.zeros((Nsize, Nsize))
-        amin = np.amin(x, axis=0)
-        amax = np.amax(x, axis=0)
-        xmin0 = amin[0]
-        xmax0 = amax[0] + 0.000001
-        xmin1 = amin[1]
-        xmax1 = amax[1] + 0.000001
-        for j in range(N):
-            xs=np.int(np.floor(Nsize *(x[j][0] - xmin0) / (xmax0 - xmin0)))
-            ys=np.int(np.floor(Nsize *(x[j][1] - xmin1) / (xmax1 - xmin1)))
-
-            u[xs,ys] += 1
-
-        return u
