@@ -6,4 +6,5 @@
 
 ## Swarm environment
 Learning to disperse a swarm of locusts
-![Alt Text](https://media.giphy.com/media/jnVo0Fe0cBqAJgS3Ja/giphy.gif)
+
+<img align="left" src="https://media.giphy.com/media/jnVo0Fe0cBqAJgS3Ja/giphy.gif">
