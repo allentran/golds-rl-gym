@@ -16,5 +16,5 @@ class SolowEnvironmentCreator(object):
 class SwarmEnvironmentCreator(object):
     def __init__(self) -> None:
         super().__init__()
-        self.num_actions = 1
+        self.num_actions = 2
         self.create_environment = lambda: gym.envs.make("Swarm-v0")

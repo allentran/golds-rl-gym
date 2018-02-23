@@ -27,14 +27,18 @@ class ConvNetworkTest(tf.test.TestCase):
 
     def policy_predict_test(self):
 
+        num_actions = 3
+        n_agents = 10
+
         estimator = ConvPolicyVNetwork(
             {
                 'name': 'test_conv_network',
-                'num_actions': self.num_actions,
+                'num_actions': num_actions,
                 'clip_norm': 40.,
                 'clip_norm_type': 'global',
                 'device': '/cpu:0',
                 'static_size': None,
+                'n_agents': n_agents,
                 'entropy_regularisation_strength': 0.,
                 'scale': 1.,
                 'height': 32,
@@ -44,35 +48,35 @@ class ConvNetworkTest(tf.test.TestCase):
                 'conv_layers': 2
             }
         )
+        actions = np.random.uniform(size=(n_agents, num_actions))
 
         state_idxs = np.hstack([
-            np.arange(self.batch_size)[:, None],
-            np.random.randint(0, estimator.height, self.batch_size)[:, None],
-            np.random.randint(0, estimator.width, self.batch_size)[:, None],
+            np.random.randint(0, estimator.height, n_agents)[:, None],
+            np.random.randint(0, estimator.width, n_agents)[:, None],
         ])
         state = np.random.uniform(
             0., 1.,
-            (self.batch_size, estimator.height, estimator.width, estimator.channels),
+            (n_agents, estimator.height, estimator.width, estimator.channels),
         )
         history = np.random.uniform(
             0., 1.,
-            (self.batch_size, self.T, estimator.height, estimator.width, estimator.channels),
+            (n_agents, self.T, estimator.height, estimator.width, estimator.channels),
         )
         with self.test_session() as sess:
             sess.run(tf.global_variables_initializer())
 
             feed_dict = {
-                estimator.state: state,
+                estimator.states: state,
                 estimator.history: history,
-                estimator.actions: self.cont_actions,
-                estimator.advantages: np.ones_like(self.advantage),
-                estimator.state_idxs: state_idxs,
-                estimator.critic_target: np.ones_like(self.advantage)
+                estimator.actions: actions,
+                estimator.advantages: np.ones((n_agents, )),
+                estimator.agent_positions: state_idxs,
+                estimator.critic_target: np.zeros((n_agents, ))
             }
             pred = sess.run(
                 {
-                    'mus': estimator.mus,
-                    'sigmas': estimator.sigmas,
+                    'mus': estimator.mu,
+                    'sigmas': estimator.sigma,
                     'policy_loss': estimator.policy_loss,
                     'vs': estimator.vs,
                     'critic_loss': estimator.critic_loss
@@ -80,11 +84,11 @@ class ConvNetworkTest(tf.test.TestCase):
                 feed_dict
             )
 
-        self.assertEqual(pred['mus'].shape, (self.batch_size, self.num_actions))
-        self.assertEqual(pred['sigmas'].shape, (self.batch_size, self.num_actions))
+        self.assertEqual(pred['mus'].shape, (n_agents, self.num_actions))
+        self.assertEqual(pred['sigmas'].shape, (n_agents, self.num_actions))
         self.assertEqual(pred['policy_loss'].shape, ())
-        self.assertEqual(pred['vs'].shape, (self.batch_size, ))
-        self.assertEqual(pred['critic_loss'].shape, (self.batch_size, ))
+        self.assertEqual(pred['vs'].shape, (n_agents, ))
+        self.assertEqual(pred['critic_loss'].shape, (n_agents, ))
 
 
 class DiscretePolicyEstimatorTest(tf.test.TestCase):

@@ -14,12 +14,37 @@ class StateProcessor(object):
 
 class SwarmStateProcessor(StateProcessor):
 
-    def __init__(self, scales=1.):
+    def __init__(self, scales=1., grid_size=40):
         super().__init__(scales)
+        self.grid_size = grid_size
+        self.positions = None
+
+    def hist_calc(self, x, update_position=False):
+        N = x.shape[0]
+        u = np.zeros((self.grid_size, self.grid_size))
+        amin = np.amin(x, axis=0)
+        amax = np.amax(x, axis=0)
+        xmin0 = amin[0]
+        xmax0 = amax[0] + 0.000001
+        xmin1 = amin[1]
+        xmax1 = amax[1] + 0.000001
+
+        if update_position:
+            self.positions = np.zeros((N, 2), dtype='int32')
+
+        for j in range(N):
+            xs=np.int(np.floor(self.grid_size *(x[j][0] - xmin0) / (xmax0 - xmin0)))
+            ys=np.int(np.floor(self.grid_size *(x[j][1] - xmin1) / (xmax1 - xmin1)))
+
+            u[xs,ys] += 1
+            if update_position:
+                self.positions[j] = [xs, ys]
+
+        return u
 
     def process_state(self, state):
-        print(state)
-        return super().process_state(state)
+        grid = np.stack([self.hist_calc(state[0]), self.hist_calc(state[1], update_position=True)], axis=-1)
+        return grid
 
 
 class TickerTraderStateProcessor(StateProcessor):

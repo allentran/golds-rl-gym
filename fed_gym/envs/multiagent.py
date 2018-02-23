@@ -23,8 +23,11 @@ class SwarmEnv(gym.Env):
 
         self.states = None
 
-    def _step(self, v_action):
+    def _step(self, v_action, add_wind=True):
         x, xa = self.states
+
+        if add_wind:
+            v_action[:, 0] += self.WIND_SPEED
 
         xa = self.x_update(xa, v_action, self.dt, self.NOISE) # next state of robots
         v, reward = self.v_calculate(x, xa, self.F, self.L, self.WIND_SPEED, self.GRAVITY) # reward is energy, we want it to decrease
@@ -32,7 +35,7 @@ class SwarmEnv(gym.Env):
 
         self.states = [x, xa]
 
-        return self.states, reward, reward <= 0, {}
+        return self.states, reward, reward >= 0, {}
 
     def _reset(self):
         x = np.random.rand(self.N_LOCUSTS, 2)
@@ -70,7 +73,7 @@ class SwarmEnv(gym.Env):
         N = x.shape[0]
         Na = xa.shape[0]
         v = np.zeros((N,2))
-        v[: ,0] = U
+        v[:, 0] = U
         v[:, 1] = G
         for j in range(N):
             for k in range(N):
@@ -83,22 +86,5 @@ class SwarmEnv(gym.Env):
                 v[j][0] += SwarmEnv.s(dist, F, L) * (xa[k][0] - x[j][0]) / (dist + 0.000001)
                 v[j][1] += SwarmEnv.s(dist, F, L) * (xa[k][1] - x[j][1]) / (dist + 0.000001)
         energy = (v ** 2).sum()
-        return v, energy
+        return v, -energy
 
-    @staticmethod
-    def hist_calc(x, Nsize):
-        N = x.shape[0]
-        u = np.zeros((Nsize, Nsize))
-        amin = np.amin(x, axis=0)
-        amax = np.amax(x, axis=0)
-        xmin0 = amin[0]
-        xmax0 = amax[0] + 0.000001
-        xmin1 = amin[1]
-        xmax1 = amax[1] + 0.000001
-        for j in range(N):
-            xs=np.int(np.floor(Nsize *(x[j][0] - xmin0) / (xmax0 - xmin0)))
-            ys=np.int(np.floor(Nsize *(x[j][1] - xmin1) / (xmax1 - xmin1)))
-
-            u[xs,ys] += 1
-
-        return u

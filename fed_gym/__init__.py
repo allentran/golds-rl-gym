@@ -21,5 +21,6 @@ register(
 register(
     id='Swarm-v0',
     entry_point='fed_gym.envs:SwarmEnv',
+    max_episode_steps=128,
 )
 

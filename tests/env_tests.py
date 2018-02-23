@@ -7,15 +7,23 @@ from fed_gym.envs import fed_env, multiagent
 
 class SwarmTests(unittest.TestCase):
     def run_env_test(self):
+        def fake_action():
+            Na = env.N_AGENTS
+            va = np.zeros((Na, 2))
+            for i in range(Na):
+                va[i, :] = np.random.normal(size=(2, ))
+            return va
+
         env = multiagent.SwarmEnv()
         env.reset()
         for _ in range(20):
-            state, reward, done, _ = env.step(np.random.uniform(size=(env.N_AGENTS, 2)))
+            action = fake_action()
+            state, reward, done, _ = env.step(action)
 
         self.assertEqual(len(state), 2)
         self.assertEqual(state[0].shape, (env.N_LOCUSTS, 2))
         self.assertEqual(state[1].shape, (env.N_AGENTS, 2))
-        self.assertGreaterEqual(reward, 0.)
+        self.assertLess(reward, 0.)
         self.assertFalse(done)
 
 

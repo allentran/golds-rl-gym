@@ -6,7 +6,7 @@ from ctypes import c_uint, c_float, c_double
 
 class Runners(object):
 
-    NUMPY_TO_C_DTYPE = {np.float32: c_float, np.float64: c_double, np.uint8: c_uint}
+    NUMPY_TO_C_DTYPE = {np.float32: c_float, np.float64: c_double, np.uint8: c_uint, np.int32: c_uint}
 
     def __init__(self, emulators, workers, variables, emulator_class):
         self.variables = [self._get_shared(var) for var in variables]

@@ -11,13 +11,13 @@ class ConvPolicyVNetwork(ConvNetwork):
         with tf.device(conf['device']):
             with tf.name_scope(self.name):
                 t = tf.shape(self.history)[1]
-                n_batches = tf.shape(self.state)[0]
+                n_batches = tf.shape(self.states)[0]
                 final_height = int(self.height / (2 ** self.conv_layers))
                 final_width = int(self.width / (2 ** self.conv_layers))
 
                 with tf.variable_scope('process_input'):
                     cnn_history = tf.reshape(self.history, (-1, self.height, self.width, self.channels))
-                    cnn_state = self.state
+                    cnn_state = self.states
                     for idx in range(self.conv_layers):
                         conv = tf.layers.Conv2D(
                             self.filters,
@@ -65,10 +65,12 @@ class ConvPolicyVNetwork(ConvNetwork):
                     )
                     sigmas = tf.reshape(sigmas, (n_batches, self.height, self.width, self.num_actions))
 
-                self.mus = tf.gather_nd(mus, self.state_idxs)
-                self.sigmas = tf.gather_nd(sigmas, self.state_idxs)
+                agent_positions = tf.concat([tf.range(n_batches)[:, None], self.agent_positions], axis=-1)
 
-                normal_dist = tf.distributions.Normal(self.mus, self.sigmas)
+                self.mu = tf.gather_nd(mus, agent_positions)
+                self.sigma = tf.gather_nd(sigmas, agent_positions)
+
+                normal_dist = tf.distributions.Normal(self.mu, self.sigma)
 
                 log_l = normal_dist.log_prob(self.actions)
                 self.entropy = normal_dist.entropy()
@@ -83,7 +85,7 @@ class ConvPolicyVNetwork(ConvNetwork):
                     vs = tf.layers.dense(vs, self.height * self.width, activation=tf.nn.relu)
                     vs = tf.reshape(vs, (n_batches, self.height, self.width))
 
-                self.vs = tf.gather_nd(vs, self.state_idxs)
+                self.vs = tf.gather_nd(vs, agent_positions)
                 self.critic_loss = tf.squared_difference(self.vs, self.critic_target)
                 self.critic_loss_mean = tf.reduce_mean(0.25 * self.critic_loss, name='mean_critic_loss')
 
