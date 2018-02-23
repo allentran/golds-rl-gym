@@ -3,3 +3,7 @@
 * Solving partial state/multi-agent control problems with RL
 * Implementations of continuous control PAAC and A3C
 * Finance/trading environments
+
+## Swarm environment
+Learning to disperse a swarm of locusts
+![Alt Text](https://media.giphy.com/media/7zGEHkywklz9zdQZ3p/giphy.gif)
