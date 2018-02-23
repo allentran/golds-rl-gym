@@ -9,10 +9,7 @@ class SwarmTests(unittest.TestCase):
     def run_env_test(self):
         def fake_action():
             Na = env.N_AGENTS
-            va = np.zeros((Na, 2))
-            for i in range(Na):
-                va[i, :] = np.random.normal(size=(2, ))
-            return va
+            return np.random.normal(size=(Na, 2))
 
         env = multiagent.SwarmEnv()
         env.reset()
@@ -25,6 +22,14 @@ class SwarmTests(unittest.TestCase):
         self.assertEqual(state[1].shape, (env.N_AGENTS, 2))
         self.assertLess(reward, 0.)
         self.assertFalse(done)
+
+    def histogram_test(self):
+        from fed_gym.agents.state_processors import SwarmStateProcessor
+        x = np.random.uniform(size=(80, 2))
+        xa = np.random.uniform(size=(10, 2))
+        print(np.amin(x, axis=0), x.min(axis=0))
+        assert False
+        #SwarmStateProcessor.hist_calc()
 
 
 class TickerEnvTests(unittest.TestCase):

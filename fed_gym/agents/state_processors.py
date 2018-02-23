@@ -19,31 +19,50 @@ class SwarmStateProcessor(StateProcessor):
         self.grid_size = grid_size
         self.positions = None
 
-    def hist_calc(self, x, update_position=False):
+    def hist_calc(self, x, update_position=False, min_x=None, max_x=None, min_y=None, max_y=None):
         N = x.shape[0]
         u = np.zeros((self.grid_size, self.grid_size))
-        amin = np.amin(x, axis=0)
-        amax = np.amax(x, axis=0)
-        xmin0 = amin[0]
-        xmax0 = amax[0] + 0.000001
-        xmin1 = amin[1]
-        xmax1 = amax[1] + 0.000001
 
         if update_position:
             self.positions = np.zeros((N, 2), dtype='int32')
 
-        for j in range(N):
-            xs=np.int(np.floor(self.grid_size *(x[j][0] - xmin0) / (xmax0 - xmin0)))
-            ys=np.int(np.floor(self.grid_size *(x[j][1] - xmin1) / (xmax1 - xmin1)))
+        frac_x = (x[:, 0] - min_x) / (max_x - min_x)
+        frac_y = (x[:, 1] - min_y) / (max_y - min_y)
 
-            u[xs,ys] += 1
-            if update_position:
-                self.positions[j] = [xs, ys]
+        xs = np.floor(self.grid_size * frac_x).astype('int32')
+        ys = np.floor(self.grid_size * frac_y).astype('int32')
+
+        if update_position:
+            self.positions = np.hstack([xs[:, None], ys[:, None]])
+
+        for j in range(N):
+            x, y = xs[j], ys[j]
+            u[x, y] += 1
 
         return u
 
+    @staticmethod
+    def get_bounding_box(position_arrays):
+        x_min, x_max, y_min, y_max = np.inf, -np.inf, np.inf, -np.inf
+        array = np.vstack(position_arrays)
+        a_xmin, a_ymin = array.min(axis=0)
+        a_xmax, a_ymax = array.max(axis=0)
+        if a_xmin < x_min:
+            x_min = a_xmin
+        if a_xmax > x_max:
+            x_max = a_xmax
+        if a_ymin < y_min:
+            y_min = a_ymin
+        if a_ymax > y_max:
+            y_max = a_ymax
+        return x_min, x_max + 1e-6, y_min, y_max + 1e-6
+
     def process_state(self, state):
-        grid = np.stack([self.hist_calc(state[0]), self.hist_calc(state[1], update_position=True)], axis=-1)
+        bounding_box = self.get_bounding_box(state)
+        grid = np.stack(
+            [self.hist_calc(state[0], False, *bounding_box), self.hist_calc(state[1], True, *bounding_box)],
+            axis=-1
+        )
         return grid
 
 

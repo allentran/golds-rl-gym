@@ -18,6 +18,8 @@ class SwarmEnv(gym.Env):
     L = 10
     dt = 0.05 # time step for equations of motion
 
+    N_BURN_IN = 10
+
     def __init__(self) -> None:
         super().__init__()
 
@@ -41,6 +43,11 @@ class SwarmEnv(gym.Env):
         x = np.random.rand(self.N_LOCUSTS, 2)
         xa = np.random.rand(self.N_AGENTS, 2)
         self.states = [x, xa]
+
+        random_actions = np.random.normal(size=(self.N_BURN_IN, self.N_AGENTS, 2))
+        for ii in range(self.N_BURN_IN):
+            self.step(random_actions[ii])
+
         return self.states
 
     @staticmethod

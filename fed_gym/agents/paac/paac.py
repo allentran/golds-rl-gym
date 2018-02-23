@@ -201,6 +201,9 @@ class GridPAACLearner(PAACLearner):
         super().__init__(network_creator, environment_creator, args, emulator_class, state_processor)
         self.real_batch_size = self.emulator_counts * self.N_AGENTS
 
+    def rescale_reward(self, reward):
+        return reward
+
     def train(self):
 
         self.global_step = self.init_network()
@@ -246,8 +249,6 @@ class GridPAACLearner(PAACLearner):
 
         emulator_steps = [0] * self.emulator_counts
         total_episode_rewards = self.emulator_counts * [0]
-
-        #TODO (effective batch size is emcounts * agents)
 
         y_batch = np.zeros((self.max_local_steps, self.real_batch_size))
         adv_batch = np.zeros((self.max_local_steps, self.real_batch_size))
@@ -344,7 +345,6 @@ class GridPAACLearner(PAACLearner):
             _, summaries = self.session.run(
                 [self.train_step, summaries_op],
                 feed_dict=feed_dict)
-
             self.summary_writer.add_summary(summaries, self.global_step)
             self.summary_writer.flush()
 

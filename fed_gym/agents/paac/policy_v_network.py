@@ -82,11 +82,11 @@ class ConvPolicyVNetwork(ConvNetwork):
                 with tf.variable_scope('v_s'):
                     vs = tf.layers.dense(self.processed_state, self.fc_hidden * 2, activation=tf.nn.relu)
                     vs = tf.layers.dense(vs, self.fc_hidden, activation=tf.nn.relu)
-                    vs = tf.layers.dense(vs, self.height * self.width, activation=tf.nn.relu)
-                    vs = tf.reshape(vs, (n_batches, self.height, self.width))
+                    vs = tf.layers.dense(vs, self.height * self.width, activation=None)
+                    vs = self.scale * tf.reshape(vs, (n_batches, self.height, self.width))
 
                 self.vs = tf.gather_nd(vs, agent_positions)
-                self.critic_loss = tf.squared_difference(self.vs, self.critic_target)
+                self.critic_loss = tf.squared_difference(self.vs, self.critic_target) / self.scale
                 self.critic_loss_mean = tf.reduce_mean(0.25 * self.critic_loss, name='mean_critic_loss')
 
                 # Loss scaling is used because the learning rate was initially runed tuned to be used with
