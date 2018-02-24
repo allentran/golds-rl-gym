@@ -66,7 +66,7 @@ class ActorLearner(Process):
             raise Exception('Norm type not recognized')
         self.flat_clipped_gradients = tf.concat([tf.reshape(g, [-1]) for g, v in grads_and_vars], axis=0)
 
-        self.train_step = self.optimizer.apply_gradients(grads_and_vars)
+        self.train_step = self.optimizer.apply_gradients(grads_and_vars, tf.train.get_global_step())
 
         config = tf.ConfigProto()
         if 'gpu' in self.device:
