@@ -93,6 +93,20 @@ class ConvPolicyVNetwork(ConvNetwork):
                 # max_local_steps = 5 and summing over timesteps, which is now replaced with the mean.
                 self.loss = self.policy_loss + self.critic_loss_mean
 
+    def predict(self, states, histories, positions, session):
+        feed_dict = {
+            self.states: states,
+            self.history: histories,
+            self.agent_positions: positions
+        }
+        return session.run(
+            {
+                'mu': self.mu,
+                'sigma': self.sigma,
+            },
+            feed_dict
+        )
+
 
 class FlatPolicyVNetwork(FlatNetwork):
 

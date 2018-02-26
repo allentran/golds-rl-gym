@@ -1,12 +1,16 @@
 import time
+import threading
 from multiprocessing.sharedctypes import RawArray
 from ctypes import c_float
-
-from .actor_learner import *
 import logging
 
-from .runners import Runners
+import gym
 import numpy as np
+
+from .actor_learner import *
+from .runners import Runners
+from ..state_processors import SwarmStateProcessor
+from .policy_monitor import PolicyMonitor
 
 
 class PAACLearner(ActorLearner):
@@ -206,12 +210,28 @@ class GridPAACLearner(PAACLearner):
 
     def train(self):
 
+        summary_writer = tf.summary.FileWriter(os.path.join(self.debugging_folder, "train"))
+
         self.global_step = self.init_network()
 
-        logging.debug("Starting training at Step {}".format(self.global_step))
-        counter = 0
+        coord = tf.train.Coordinator()
+        pe = PolicyMonitor(
+            env=gym.envs.make("Swarm-v0"),
+            global_policy_net=self.network,
+            state_processor=SwarmStateProcessor(),
+            summary_writer=summary_writer,
+            saver=None,
+            network_conf=self.network.conf,
+        )
 
-        global_step_start = self.global_step
+        monitor_thread = threading.Thread(
+            target=lambda: pe.continuous_eval(
+                10., self.session, coord, self.rnn_length
+        )
+        )
+        monitor_thread.start()
+
+        logging.debug("Starting training at Step {}".format(self.global_step))
 
         total_rewards = []
 
@@ -260,11 +280,7 @@ class GridPAACLearner(PAACLearner):
         values = np.zeros((self.max_local_steps, self.real_batch_size))
         episodes_over_masks = np.zeros((self.max_local_steps, self.real_batch_size))
 
-        start_time = time.time()
-
         while self.global_step < self.max_global_steps:
-
-            loop_start_time = time.time()
 
             max_local_steps = self.max_local_steps
             for t in range(max_local_steps):
@@ -287,6 +303,7 @@ class GridPAACLearner(PAACLearner):
                     (self.real_batch_size, )
                 ).astype(np.float32)
 
+                any_over = False
                 for e_idx, (actual_rewards, episode_overs) in enumerate(zip(shared_rewards, shared_episode_over)):
 
                     episode_over = episode_overs[0]
@@ -299,6 +316,7 @@ class GridPAACLearner(PAACLearner):
                     emulator_steps[e_idx] += 1
                     self.global_step += 1
                     if episode_over:
+                        any_over = True
                         total_rewards.append(total_episode_rewards[e_idx] / emulator_steps[e_idx])
                         episode_summary = tf.Summary(value=[
                             tf.Summary.Value(tag='rl/reward', simple_value=total_episode_rewards[e_idx]),
@@ -308,6 +326,9 @@ class GridPAACLearner(PAACLearner):
                         self.summary_writer.flush()
                         total_episode_rewards[e_idx] = 0
                         emulator_steps[e_idx] = 0
+
+                if any_over:
+                    print(total_rewards[-1], total_rewards.mean())
 
             next_state_value = self.session.run(
                 self.network.vs,
@@ -348,19 +369,9 @@ class GridPAACLearner(PAACLearner):
             self.summary_writer.add_summary(summaries, self.global_step)
             self.summary_writer.flush()
 
-            counter += 1
-
-            if counter % (5048 / self.emulator_counts) == 0:
-                curr_time = time.time()
-                global_steps = self.global_step
-                last_ten = 0.0 if len(total_rewards) < 1 else np.mean(total_rewards[-10:])
-                logging.info("Ran {} steps, at {} steps/s ({} steps/s avg), last 10 rewards avg {}"
-                             .format(global_steps,
-                                     self.max_local_steps * self.emulator_counts / (curr_time - loop_start_time),
-                                     (global_steps - global_step_start) / (curr_time - start_time),
-                                     last_ten))
             self.save_vars()
 
+        coord.join([monitor_thread])
         self.cleanup()
 
     def _choose_next_actions(self, states, histories, positions):

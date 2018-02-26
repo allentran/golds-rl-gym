@@ -6,6 +6,8 @@ import signal
 import os
 import copy
 
+import tensorflow as tf
+
 from fed_gym.agents.state_processors import SwarmStateProcessor
 from fed_gym.agents.paac import environment_creator
 from fed_gym.agents.paac.emulator_runner import SwarmRunner
@@ -83,7 +85,8 @@ def get_network_and_environment_creator(args, random_seed=3):
         nonlocal network_conf
         copied_network_conf = copy.copy(network_conf)
         copied_network_conf['name'] = name
-        return ConvPolicyVNetwork(copied_network_conf)
+        with tf.variable_scope("global"):
+            return ConvPolicyVNetwork(copied_network_conf)
 
     return network_creator, env_creator
 

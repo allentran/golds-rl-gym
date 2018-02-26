@@ -109,6 +109,7 @@ class Network(object):
         self.static_size = conf['static_size']
         self.entropy_beta = conf['entropy_regularisation_strength']
         self.scale = conf['scale']
+        self.conf = conf
 
         with tf.device(self.device):
             with tf.name_scope(self.name):
