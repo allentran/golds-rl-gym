@@ -40,7 +40,7 @@ class ActorLearner(Process):
         self.runners = None
 
         # Optimizer
-        grads_and_vars = self.optimizer.compute_gradients(self.network.loss)
+        grads_and_vars = [(g, v) for g, v in self.optimizer.compute_gradients(self.network.loss) if g is not None]
 
         self.flat_raw_gradients = tf.concat([tf.reshape(g, [-1]) for g, v in grads_and_vars], axis=0)
 
@@ -89,12 +89,12 @@ class ActorLearner(Process):
             # self.network_saver.save(self.session, self.network_checkpoint_folder, global_step=self.last_saving_step)
             # self.optimizer_saver.save(self.session, self.optimizer_checkpoint_folder, global_step=self.last_saving_step)
 
-    def rescale_reward(self, reward):
+    def rescale_reward(self, reward, lb=-2, ub=2):
         """ Clip immediate reward """
-        if reward > 1.0:
-            reward = 1.0
-        elif reward < -1.0:
-            reward = -1.0
+        if reward > ub:
+            reward = ub
+        elif reward < lb:
+            reward = lb
         return reward
 
     def init_network(self):

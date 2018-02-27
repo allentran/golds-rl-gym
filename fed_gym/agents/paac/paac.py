@@ -9,8 +9,8 @@ import numpy as np
 
 from .actor_learner import *
 from .runners import Runners
-from ..state_processors import SwarmStateProcessor
-from .policy_monitor import PolicyMonitor
+from ..state_processors import SwarmStateProcessor, SolowStateProcessor
+from .policy_monitor import SolowPolicyMonitor, SwarmPolicyMonitor
 
 
 class PAACLearner(ActorLearner):
@@ -57,7 +57,26 @@ class PAACLearner(ActorLearner):
         Main actor learner loop for parallel advantage actor critic learning.
         """
 
+        summary_writer = tf.summary.FileWriter(os.path.join(self.debugging_folder, "train"))
+
         self.global_step = self.init_network()
+
+        coord = tf.train.Coordinator()
+        pe = SolowPolicyMonitor(
+            env=gym.envs.make("Solow-1-1-finite-eval-v0"),
+            global_policy_net=self.network,
+            state_processor=SolowStateProcessor(),
+            summary_writer=summary_writer,
+            saver=None,
+            network_conf=self.network.conf,
+        )
+
+        monitor_thread = threading.Thread(
+            target=lambda: pe.continuous_eval(
+                10., self.session, coord, self.rnn_length
+            )
+        )
+        monitor_thread.start()
 
         logging.debug("Starting training at Step {}".format(self.global_step))
         counter = 0
@@ -215,7 +234,7 @@ class GridPAACLearner(PAACLearner):
         self.global_step = self.init_network()
 
         coord = tf.train.Coordinator()
-        pe = PolicyMonitor(
+        pe = SwarmPolicyMonitor(
             env=gym.envs.make("Swarm-v0"),
             global_policy_net=self.network,
             state_processor=SwarmStateProcessor(),

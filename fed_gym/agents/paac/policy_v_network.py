@@ -160,10 +160,22 @@ class FlatPolicyVNetwork(FlatNetwork):
                     )
                     self.vs = tf.squeeze(self.vs, squeeze_dims=[1], name="logits")
 
-                self.critic_loss = tf.squared_difference(self.vs, self.critic_target)
+                self.critic_loss = tf.squared_difference(self.vs, self.critic_target) / self.scale
                 self.critic_loss_mean = tf.reduce_mean(0.25 * self.critic_loss, name='mean_critic_loss')
 
                 # Loss scaling is used because the learning rate was initially runed tuned to be used with
                 # max_local_steps = 5 and summing over timesteps, which is now replaced with the mean.
                 self.loss = self.policy_loss + self.critic_loss_mean
 
+    def predict(self, states, histories, session):
+        feed_dict = {
+            self.states: states,
+            self.history: histories,
+        }
+        return session.run(
+            {
+                'mu': self.mu,
+                'sigma': self.sigma,
+            },
+            feed_dict
+        )
