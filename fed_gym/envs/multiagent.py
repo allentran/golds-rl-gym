@@ -20,10 +20,15 @@ class SwarmEnv(gym.Env):
 
     N_BURN_IN = 10
 
-    def __init__(self) -> None:
+    def __init__(self, seed=None) -> None:
         super().__init__()
 
+        self.n_seed = seed
         self.states = None
+
+    def _seed(self, seed=None):
+        if seed:
+            np.random.seed(seed)
 
     def _step(self, v_action, add_wind=True):
         x, xa = self.states
@@ -40,6 +45,7 @@ class SwarmEnv(gym.Env):
         return self.states, reward, reward >= 0, {}
 
     def _reset(self):
+        # self.seed(self.n_seed)
         x = np.random.rand(self.N_LOCUSTS, 2)
         xa = np.random.rand(self.N_AGENTS, 2)
         self.states = [x, xa]
@@ -51,7 +57,6 @@ class SwarmEnv(gym.Env):
         return self.states
 
     @staticmethod
-    @functools.lru_cache()
     def s(r, F, L):
         s = F * np.exp(-r / L) - np.exp(-r)
         return s
@@ -78,20 +83,23 @@ class SwarmEnv(gym.Env):
     @staticmethod
     def v_calculate(x, xa, F, L, U, G):
         N = x.shape[0]
-        Na = xa.shape[0]
         v = np.zeros((N,2))
         v[:, 0] = U
         v[:, 1] = G
         for j in range(N):
-            for k in range(N):
-                if k != j:
-                    dist = ((x[k][0] - x[j][0]) ** 2 + (x[k][1] - x[j][1]) ** 2) ** 0.5
-                    v[j][0] += SwarmEnv.s(dist, F, L) * (x[k][0] - x[j][0]) / (dist + 0.000001)
-                    v[j][1] += SwarmEnv.s(dist, F, L) * (x[k][1] - x[j][1]) / (dist + 0.000001)
-            for k in range(Na):
-                dist = ((xa[k][0] - x[j][0]) ** 2 + (xa[k][1] - x[j][1]) ** 2) ** 0.5
-                v[j][0] += SwarmEnv.s(dist, F, L) * (xa[k][0] - x[j][0]) / (dist + 0.000001)
-                v[j][1] += SwarmEnv.s(dist, F, L) * (xa[k][1] - x[j][1]) / (dist + 0.000001)
+            # other swarm particles
+            dists = ((x[:, 0] - x[j][0]) ** 2 + (x[:, 1] - x[j][1]) ** 2) ** 0.5
+            v_0 = SwarmEnv.s(dists, F, L) * (x[:, 0] - x[j][0]) / (dists + 0.000001)
+            v_1 = SwarmEnv.s(dists, F, L) * (x[:, 1] - x[j][1]) / (dists + 0.000001)
+            v[j][0] += v_0.sum()
+            v[j][1] += v_1.sum()
+
+            # agent interactions
+            dists = ((xa[:, 0] - x[j][0]) ** 2 + (xa[:, 1] - x[j][1]) ** 2) ** 0.5
+            v_0 = SwarmEnv.s(dists, F, L) * (xa[:, 0] - x[j][0]) / (dists + 0.000001)
+            v_1 = SwarmEnv.s(dists, F, L) * (xa[:, 1] - x[j][1]) / (dists + 0.000001)
+            v[j][0] += v_0.sum()
+            v[j][1] += v_1.sum()
         energy = (v ** 2).sum()
         return v, -energy
 

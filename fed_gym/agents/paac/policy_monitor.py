@@ -95,12 +95,11 @@ class SolowPolicyMonitor(PolicyMonitor):
             while not done:
                 action = self.get_action_from_policy(np.array([processed_state]), history, None, sess)
                 next_state, reward, done, _ = self.env.step(action)
-                next_processed_state = self.state_processor.process_state(next_state)
+                processed_state = self.state_processor.process_state(next_state)
                 histories.append(np.array(processed_state))
                 history = np.array([histories[-max_sequence_length:]])
                 total_reward += reward
                 episode_length += 1
-                processed_state = next_processed_state
                 rewards.append(reward)
 
                 histories = histories[-2 * max_sequence_length:]
@@ -127,8 +126,11 @@ class SolowPolicyMonitor(PolicyMonitor):
 class SwarmPolicyMonitor(PolicyMonitor):
 
     def get_action_from_policy(self, processed_state, history, positions, sess):
-        mu = self.policy_net.predict(processed_state, history, positions, sess)['mu']
-        return SwarmRunner.transform_actions_for_env(mu)
+        predictions = self.policy_net.predict(processed_state, history, positions, sess)
+        mu, sigma = predictions['mu'], predictions['sigma']
+        # new_actions = mu + sigma * np.random.normal(size=mu.shape)
+        new_actions = mu
+        return SwarmRunner.transform_actions_for_env(new_actions)
 
     @staticmethod
     def _create_policy_estimator(conf):
@@ -155,14 +157,13 @@ class SwarmPolicyMonitor(PolicyMonitor):
             while not done:
                 action = self.get_action_from_policy(np.array(processed_state), history, self.state_processor.positions, sess)
                 next_state, reward, done, _ = self.env.step(action)
-                next_processed_state = self.state_processor.process_state(next_state)
-                next_processed_state = np.array(SwarmRunner.get_local_states(next_processed_state, self.state_processor.positions))
+                processed_state = self.state_processor.process_state(next_state)
+                processed_state = np.array(SwarmRunner.get_local_states(processed_state, self.state_processor.positions))
                 histories.append(np.array(processed_state))
                 history = np.array(histories[-max_sequence_length:])
                 history = np.swapaxes(history, 0, 1)
                 total_reward += reward
                 episode_length += 1
-                processed_state = next_processed_state
                 rewards.append(reward)
 
                 histories = histories[-2 * max_sequence_length:]
