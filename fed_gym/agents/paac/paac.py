@@ -278,7 +278,8 @@ class GridPAACLearner(PAACLearner):
         shared_states, shared_histories, shared_positions, shared_rewards, shared_episode_over, shared_actions = self.runners.get_shared_variables()
 
         summaries_op = tf.summary.merge_all()
-
+        # s, h, p = pe.eval_once(self.session)
+        # self.choose_next_actions(self.network, self.num_actions, s, h, p, self.session)
         monitor_thread = threading.Thread(
             target=lambda: pe.continuous_eval(
                 10., self.session, coord, self.rnn_length
@@ -408,10 +409,18 @@ class GridPAACLearner(PAACLearner):
         self.cleanup()
 
     def _choose_next_actions(self, states, histories, positions):
-        states = states.reshape((self.real_batch_size, ) + states.shape[2:])
-        histories = histories.reshape((self.real_batch_size, *histories.shape[2:]))
-        positions = positions.reshape((self.real_batch_size, 2))
-        return self.choose_next_actions(self.network, self.num_actions, states, histories, positions, self.session)
+        # states = states.reshape((self.real_batch_size, ) + states.shape[2:])
+        # histories = histories.reshape((self.real_batch_size, *histories.shape[2:]))
+        # positions = positions.reshape((self.real_batch_size, 2))
+        actions = []
+        vs = []
+        for idx in range(len(states)):
+            a, v = self.choose_next_actions(self.network, self.num_actions, states[idx], histories[idx], positions[idx], self.session)
+            actions.append(a)
+            vs.append(v)
+        z = np.array(actions).reshape((-1, 2))
+        k = np.array(vs).reshape((-1, ))
+        return z, k
 
     @staticmethod
     def choose_next_actions(network, num_actions, states, histories, agent_positions, session):

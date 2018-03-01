@@ -11,7 +11,7 @@ class SwarmEnv(gym.Env):
     GRID_SIZE = 40
 
     # parameters of the system
-    NOISE = 0.0001 # random noise on the locust velocities
+    NOISE = 0 * 0.0001 # random noise on the locust velocities
     GRAVITY = -1 # gravity
     WIND_SPEED = 1 # wind speed
     F = 0.5 # attraction and repulsion parameters
@@ -25,10 +25,11 @@ class SwarmEnv(gym.Env):
 
         self.n_seed = seed
         self.states = None
+        self.t = 0
 
-    def _seed(self, seed=None):
-        if seed:
-            np.random.seed(seed)
+    # def _seed(self, seed=None):
+    #     if seed:
+    #         np.random.seed(seed)
 
     def _step(self, v_action, add_wind=True):
         x, xa = self.states
@@ -36,23 +37,29 @@ class SwarmEnv(gym.Env):
         if add_wind:
             v_action[:, 0] += self.WIND_SPEED
 
-        xa = self.x_update(xa, v_action, self.dt, self.NOISE) # next state of robots
+        xa = self.x_update(xa, v_action, self.dt, self.NOISE * self.agent_noise[self.t]) # next state of robots
         v, reward = self.v_calculate(x, xa, self.F, self.L, self.WIND_SPEED, self.GRAVITY) # reward is energy, we want it to decrease
-        x = self.x_update(x, v, self.dt, self.NOISE) # next state of locusts
+        x = self.x_update(x, v, self.dt, self.NOISE * self.particle_noise[self.t]) # next state of locusts
 
         self.states = [x, xa]
 
         return self.states, reward, reward >= 0, {}
 
     def _reset(self):
-        # self.seed(self.n_seed)
+        np.random.seed(1692)
+        self.t = 0
+
         x = np.random.rand(self.N_LOCUSTS, 2)
         xa = np.random.rand(self.N_AGENTS, 2)
+        random_actions = np.random.normal(size=(self.N_BURN_IN, self.N_AGENTS, 2))
+
+        self.agent_noise = np.random.normal(size=(128 + self.N_BURN_IN, self.N_AGENTS, 2))
+        self.particle_noise = np.random.normal(size=(128 + self.N_BURN_IN, self.N_LOCUSTS, 2))
         self.states = [x, xa]
 
-        random_actions = np.random.normal(size=(self.N_BURN_IN, self.N_AGENTS, 2))
         for ii in range(self.N_BURN_IN):
             self.step(random_actions[ii])
+            self.t += 1
 
         return self.states
 
@@ -63,9 +70,8 @@ class SwarmEnv(gym.Env):
 
     @staticmethod
     def x_update(x, v, dt, noise):
-        N = v.shape[0]
         x, v = SwarmEnv.xv_cutoff(x, v)
-        x += dt * v + noise * np.random.randn(N, 2)
+        x += dt * v + noise
         x, v = SwarmEnv.xv_cutoff(x, v)
         return x
 
