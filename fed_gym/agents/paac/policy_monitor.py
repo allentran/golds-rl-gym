@@ -1,4 +1,5 @@
 import os
+import queue
 import time
 
 import numpy as np
@@ -136,7 +137,7 @@ class SwarmPolicyMonitor(PolicyMonitor):
     def _create_policy_estimator(conf):
         return ConvPolicyVNetwork(conf)
 
-    def eval_once(self, sess, max_sequence_length=5):
+    def eval_once(self, sess, max_sequence_length=5, actions: queue.Queue=None):
         with sess.as_default(), sess.graph.as_default():
             # Copy params to local model
             sess.run(self.copy_params_op)
@@ -148,25 +149,28 @@ class SwarmPolicyMonitor(PolicyMonitor):
             state = self.env.reset()
             processed_state = self.state_processor.process_state(state)
             processed_state = SwarmRunner.get_local_states(processed_state, self.state_processor.positions)
-            histories.append(np.array(processed_state))
-            history = np.array(histories)
-            history = np.swapaxes(history, 0, 1)
+            # histories.append(np.array(processed_state))
+            # history = np.array(histories)
+            # history = np.swapaxes(history, 0, 1)
             total_reward = 0.0
             episode_length = 0
             rewards = []
             while not done:
-                action = self.get_action_from_policy(np.array(processed_state), history, self.state_processor.positions, sess)
+                if actions:
+                    action = actions.get()
+                else:
+                    action = self.get_action_from_policy(np.array(processed_state), None, self.state_processor.positions, sess)
                 next_state, reward, done, _ = self.env.step(action)
                 processed_state = self.state_processor.process_state(next_state)
                 processed_state = np.array(SwarmRunner.get_local_states(processed_state, self.state_processor.positions))
-                histories.append(np.array(processed_state))
-                history = np.array(histories[-max_sequence_length:])
-                history = np.swapaxes(history, 0, 1)
+                # histories.append(np.array(processed_state))
+                # history = np.array(histories[-max_sequence_length:])
+                # history = np.swapaxes(history, 0, 1)
                 total_reward += reward
                 episode_length += 1
                 rewards.append(reward)
 
-                histories = histories[-2 * max_sequence_length:]
+                # histories = histories[-2 * max_sequence_length:]
 
             # Add summaries
             episode_summary = tf.Summary()

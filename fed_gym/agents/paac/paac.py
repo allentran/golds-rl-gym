@@ -1,4 +1,5 @@
 import time
+import queue
 import threading
 from multiprocessing.sharedctypes import RawArray
 from ctypes import c_float
@@ -278,14 +279,13 @@ class GridPAACLearner(PAACLearner):
         shared_states, shared_histories, shared_positions, shared_rewards, shared_episode_over, shared_actions = self.runners.get_shared_variables()
 
         summaries_op = tf.summary.merge_all()
-        # s, h, p = pe.eval_once(self.session)
         # self.choose_next_actions(self.network, self.num_actions, s, h, p, self.session)
-        monitor_thread = threading.Thread(
-            target=lambda: pe.continuous_eval(
-                10., self.session, coord, self.rnn_length
-            )
-        )
-        monitor_thread.start()
+        # monitor_thread = threading.Thread(
+        #     target=lambda: pe.continuous_eval(
+        #         10., self.session, coord, self.rnn_length
+        #     )
+        # )
+        # monitor_thread.start()
 
         emulator_steps = [0] * self.emulator_counts
         total_episode_rewards = self.emulator_counts * [0]
@@ -304,6 +304,7 @@ class GridPAACLearner(PAACLearner):
         global_step_start = self.global_step
 
         start_time = time.time()
+        used_actions = queue.Queue()
 
         while self.global_step < self.max_global_steps:
 
@@ -314,6 +315,8 @@ class GridPAACLearner(PAACLearner):
                 next_actions, readouts_v_t = self._choose_next_actions(shared_states, shared_histories, shared_positions)
                 transformed_actions = self.emulator_class.transform_actions_for_env(next_actions)
                 shared_actions = transformed_actions.reshape(self.emulator_counts, self.N_AGENTS, self.num_actions)
+
+                used_actions.put(transformed_actions.reshape((32, 10, 2))[0])
 
                 actions[t] = next_actions
                 positions[t] = shared_positions.reshape((self.real_batch_size, 2))
@@ -351,6 +354,10 @@ class GridPAACLearner(PAACLearner):
                         self.summary_writer.flush()
                         total_episode_rewards[e_idx] = 0
                         emulator_steps[e_idx] = 0
+
+                if episode_over:
+                    pe.eval_once(self.session, used_actions)
+                    used_actions = queue.Queue()
 
             next_state_value = self.session.run(
                 self.network.vs,
@@ -405,7 +412,7 @@ class GridPAACLearner(PAACLearner):
 
             self.save_vars()
 
-        coord.join([monitor_thread])
+        # coord.join([monitor_thread])
         self.cleanup()
 
     def _choose_next_actions(self, states, histories, positions):
@@ -426,5 +433,5 @@ class GridPAACLearner(PAACLearner):
     def choose_next_actions(network, num_actions, states, histories, agent_positions, session):
         output = network.predict(states, histories, agent_positions, session)
         network_output_mu, network_output_sigma, network_output_v = output['mu'], output['sigma'], output['vs']
-        new_actions = network_output_mu + network_output_sigma * np.random.normal(size=network_output_mu.shape)
+        new_actions = network_output_mu #+ network_output_sigma * np.random.normal(size=network_output_mu.shape)
         return new_actions, network_output_v

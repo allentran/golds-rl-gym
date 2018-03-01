@@ -110,7 +110,7 @@ class SwarmRunner(EmulatorRunner):
     def transform_actions_for_env(actions):
         distance = np.linalg.norm(actions, axis=-1)
         move_too_much_mask = distance >= SwarmRunner.MAX_MOVE_NORM
-        actions[move_too_much_mask] /= distance[move_too_much_mask][:, None]
+        actions[move_too_much_mask, :] /= distance[move_too_much_mask][:, None]
         return actions
 
     def _run(self):
