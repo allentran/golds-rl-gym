@@ -313,7 +313,11 @@ class GridPAACLearner(PAACLearner):
             for t in range(max_local_steps):
                 next_actions, readouts_v_t = self._choose_next_actions(shared_states, shared_histories, shared_positions)
                 transformed_actions = self.emulator_class.transform_actions_for_env(next_actions)
-                shared_actions = transformed_actions.reshape(self.emulator_counts, self.N_AGENTS, self.num_actions)
+                transformed_actions = transformed_actions.reshape(self.emulator_counts, self.N_AGENTS, self.num_actions)
+
+                # NEED TO DO THIS FOR SHARED CTYPES ASSIGNMENT (IE DO NOT DO SHARED_ACTIONS = xyz)
+                for idx in range(transformed_actions.shape[0]):
+                    shared_actions[idx] = transformed_actions[idx]
 
                 actions[t] = next_actions
                 positions[t] = shared_positions.reshape((self.real_batch_size, 2))
