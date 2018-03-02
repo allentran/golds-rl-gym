@@ -57,8 +57,6 @@ class PAACLearner(ActorLearner):
         Main actor learner loop for parallel advantage actor critic learning.
         """
 
-        summary_writer = tf.summary.FileWriter(os.path.join(self.debugging_folder, "train"))
-
         self.global_step = self.init_network()
 
         coord = tf.train.Coordinator()
@@ -66,7 +64,7 @@ class PAACLearner(ActorLearner):
             env=gym.envs.make("Solow-1-1-finite-eval-v0"),
             global_policy_net=self.network,
             state_processor=SolowStateProcessor(),
-            summary_writer=summary_writer,
+            summary_writer=self.summary_writer,
             saver=None,
             network_conf=self.network.conf,
         )

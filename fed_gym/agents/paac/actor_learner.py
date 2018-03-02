@@ -26,7 +26,7 @@ class ActorLearner(Process):
         self.network_checkpoint_folder = os.path.join(self.debugging_folder, 'checkpoints/')
         self.optimizer_checkpoint_folder = os.path.join(self.debugging_folder, 'optimizer_checkpoints/')
         self.last_saving_step = 0
-        self.summary_writer = tf.summary.FileWriter(os.path.join(self.debugging_folder, 'tf'))
+        self.summary_writer = tf.summary.FileWriter(os.path.join(self.debugging_folder, "train"))
 
         self.learning_rate = tf.placeholder(tf.float32, shape=[])
         optimizer_variable_names = 'OptimizerVariables'
