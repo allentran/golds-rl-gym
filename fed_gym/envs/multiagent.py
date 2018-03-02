@@ -105,6 +105,6 @@ class SwarmEnv(gym.Env):
             v_1 = SwarmEnv.s(dists, F, L) * (xa[:, 1] - x[j][1]) / (dists + 0.000001)
             v[j][0] += v_0.sum()
             v[j][1] += v_1.sum()
-        energy = (v ** 2).sum()
+        energy = (v ** 2).sum(axis=1).mean()
         return v, -energy
 
