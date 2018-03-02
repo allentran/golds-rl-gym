@@ -68,7 +68,7 @@ class ActorLearner(Process):
 
         self.train_step = self.optimizer.apply_gradients(grads_and_vars, self.network.global_step_tensor)
 
-        config = tf.ConfigProto()
+        config = tf.ConfigProto(allow_soft_placement=True)
         if 'gpu' in self.device:
             logging.debug('Dynamic gpu mem allocation')
             config.gpu_options.allow_growth = True
