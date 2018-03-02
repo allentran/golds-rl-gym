@@ -11,7 +11,7 @@ class SwarmEnv(gym.Env):
     GRID_SIZE = 40
 
     # parameters of the system
-    NOISE = 0 * 0.0001 # random noise on the locust velocities
+    NOISE = 0.0001 # random noise on the locust velocities
     GRAVITY = -1 # gravity
     WIND_SPEED = 1 # wind speed
     F = 0.5 # attraction and repulsion parameters
@@ -27,12 +27,10 @@ class SwarmEnv(gym.Env):
         self.states = None
         self.t = 0
 
-    # def _seed(self, seed=None):
-    #     if seed:
-    #         np.random.seed(seed)
-
     def _step(self, v_action, add_wind=True):
         x, xa = self.states
+
+        v_action = v_action.copy()
 
         if add_wind:
             v_action[:, 0] += self.WIND_SPEED
@@ -46,7 +44,8 @@ class SwarmEnv(gym.Env):
         return self.states, reward, reward >= 0, {}
 
     def _reset(self):
-        np.random.seed(1692)
+        if self.n_seed:
+            np.random.seed(1692)
         self.t = 0
 
         x = np.random.rand(self.N_LOCUSTS, 2)

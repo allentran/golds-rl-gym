@@ -1,4 +1,5 @@
 import os
+import queue
 import time
 
 import numpy as np
@@ -136,7 +137,7 @@ class SwarmPolicyMonitor(PolicyMonitor):
     def _create_policy_estimator(conf):
         return ConvPolicyVNetwork(conf)
 
-    def eval_once(self, sess, max_sequence_length=5):
+    def eval_once(self, sess, max_sequence_length=5, actions: queue.Queue=None):
         with sess.as_default(), sess.graph.as_default():
             # Copy params to local model
             sess.run(self.copy_params_op)
@@ -155,7 +156,10 @@ class SwarmPolicyMonitor(PolicyMonitor):
             episode_length = 0
             rewards = []
             while not done:
-                action = self.get_action_from_policy(np.array(processed_state), history, self.state_processor.positions, sess)
+                if not actions:
+                    action = self.get_action_from_policy(np.array(processed_state), history, self.state_processor.positions, sess)
+                else:
+                    action = actions.get()
                 next_state, reward, done, _ = self.env.step(action)
                 processed_state = self.state_processor.process_state(next_state)
                 processed_state = np.array(SwarmRunner.get_local_states(processed_state, self.state_processor.positions))
