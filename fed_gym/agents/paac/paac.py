@@ -149,10 +149,8 @@ class PAACLearner(ActorLearner):
                     self.global_step += 1
                     if episode_over:
                         total_rewards.append(total_episode_rewards[e_idx] / emulator_steps[e_idx])
-                        episode_summary = tf.Summary(value=[
-                            tf.Summary.Value(tag='rl/reward', simple_value=total_episode_rewards[e_idx]),
-                            tf.Summary.Value(tag='rl/episode_length', simple_value=emulator_steps[e_idx]),
-                        ])
+                        episode_summary = tf.Summary()
+                        episode_summary.value.add(simple_value=total_episode_rewards[e_idx], tag="rl/reward")
                         self.summary_writer.add_summary(episode_summary, self.global_step)
                         self.summary_writer.flush()
                         total_episode_rewards[e_idx] = 0
@@ -341,10 +339,8 @@ class GridPAACLearner(PAACLearner):
                     self.global_step += 1
                     if episode_over:
                         total_rewards.append(total_episode_rewards[e_idx] / emulator_steps[e_idx])
-                        episode_summary = tf.Summary(value=[
-                            tf.Summary.Value(tag='rl/reward', simple_value=total_episode_rewards[e_idx]),
-                            tf.Summary.Value(tag='rl/episode_length', simple_value=emulator_steps[e_idx]),
-                        ])
+                        episode_summary = tf.Summary()
+                        episode_summary.value.add(simple_value=total_episode_rewards[e_idx], tag="rl/reward")
                         self.summary_writer.add_summary(episode_summary, self.global_step)
                         self.summary_writer.flush()
                         total_episode_rewards[e_idx] = 0

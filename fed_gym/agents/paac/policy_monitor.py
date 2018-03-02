@@ -78,7 +78,7 @@ class SolowPolicyMonitor(PolicyMonitor):
 
     def eval_once(self, sess, max_sequence_length=5):
         with sess.as_default(), sess.graph.as_default():
-            sess.run(self.copy_params_op)
+            global_step, _ = sess.run([tf.train.get_global_step(), self.copy_params_op])
             histories = []
 
             # Run an episode
@@ -106,7 +106,7 @@ class SolowPolicyMonitor(PolicyMonitor):
             episode_summary = tf.Summary()
             episode_summary.value.add(simple_value=total_reward, tag="eval/total_reward")
             episode_summary.value.add(simple_value=episode_length, tag="eval/episode_length")
-            self.summary_writer.add_summary(episode_summary, tf.train.get_global_step())
+            self.summary_writer.add_summary(episode_summary, global_step)
             self.summary_writer.flush()
 
             # if self.saver is not None:
