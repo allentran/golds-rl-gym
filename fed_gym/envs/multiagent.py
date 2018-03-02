@@ -20,47 +20,57 @@ class SwarmEnv(gym.Env):
 
     N_BURN_IN = 10
 
-    def __init__(self) -> None:
+    def __init__(self, seed=None) -> None:
         super().__init__()
 
+        self.n_seed = seed
         self.states = None
+        self.t = 0
 
     def _step(self, v_action, add_wind=True):
         x, xa = self.states
 
+        v_action = v_action.copy()
+
         if add_wind:
             v_action[:, 0] += self.WIND_SPEED
 
-        xa = self.x_update(xa, v_action, self.dt, self.NOISE) # next state of robots
+        xa = self.x_update(xa, v_action, self.dt, self.NOISE * self.agent_noise[self.t]) # next state of robots
         v, reward = self.v_calculate(x, xa, self.F, self.L, self.WIND_SPEED, self.GRAVITY) # reward is energy, we want it to decrease
-        x = self.x_update(x, v, self.dt, self.NOISE) # next state of locusts
+        x = self.x_update(x, v, self.dt, self.NOISE * self.particle_noise[self.t]) # next state of locusts
 
         self.states = [x, xa]
 
         return self.states, reward, reward >= 0, {}
 
     def _reset(self):
+        if self.n_seed:
+            np.random.seed(self.n_seed)
+        self.t = 0
+
         x = np.random.rand(self.N_LOCUSTS, 2)
         xa = np.random.rand(self.N_AGENTS, 2)
+        random_actions = np.random.normal(size=(self.N_BURN_IN, self.N_AGENTS, 2))
+
+        self.agent_noise = np.random.normal(size=(128 + self.N_BURN_IN, self.N_AGENTS, 2))
+        self.particle_noise = np.random.normal(size=(128 + self.N_BURN_IN, self.N_LOCUSTS, 2))
         self.states = [x, xa]
 
-        random_actions = np.random.normal(size=(self.N_BURN_IN, self.N_AGENTS, 2))
         for ii in range(self.N_BURN_IN):
             self.step(random_actions[ii])
+            self.t += 1
 
         return self.states
 
     @staticmethod
-    @functools.lru_cache()
     def s(r, F, L):
         s = F * np.exp(-r / L) - np.exp(-r)
         return s
 
     @staticmethod
     def x_update(x, v, dt, noise):
-        N = v.shape[0]
         x, v = SwarmEnv.xv_cutoff(x, v)
-        x += dt * v + noise * np.random.randn(N, 2)
+        x += dt * v + noise
         x, v = SwarmEnv.xv_cutoff(x, v)
         return x
 
@@ -78,20 +88,23 @@ class SwarmEnv(gym.Env):
     @staticmethod
     def v_calculate(x, xa, F, L, U, G):
         N = x.shape[0]
-        Na = xa.shape[0]
         v = np.zeros((N,2))
         v[:, 0] = U
         v[:, 1] = G
         for j in range(N):
-            for k in range(N):
-                if k != j:
-                    dist = ((x[k][0] - x[j][0]) ** 2 + (x[k][1] - x[j][1]) ** 2) ** 0.5
-                    v[j][0] += SwarmEnv.s(dist, F, L) * (x[k][0] - x[j][0]) / (dist + 0.000001)
-                    v[j][1] += SwarmEnv.s(dist, F, L) * (x[k][1] - x[j][1]) / (dist + 0.000001)
-            for k in range(Na):
-                dist = ((xa[k][0] - x[j][0]) ** 2 + (xa[k][1] - x[j][1]) ** 2) ** 0.5
-                v[j][0] += SwarmEnv.s(dist, F, L) * (xa[k][0] - x[j][0]) / (dist + 0.000001)
-                v[j][1] += SwarmEnv.s(dist, F, L) * (xa[k][1] - x[j][1]) / (dist + 0.000001)
-        energy = (v ** 2).sum()
+            # other swarm particles
+            dists = ((x[:, 0] - x[j][0]) ** 2 + (x[:, 1] - x[j][1]) ** 2) ** 0.5
+            v_0 = SwarmEnv.s(dists, F, L) * (x[:, 0] - x[j][0]) / (dists + 0.000001)
+            v_1 = SwarmEnv.s(dists, F, L) * (x[:, 1] - x[j][1]) / (dists + 0.000001)
+            v[j][0] += v_0.sum()
+            v[j][1] += v_1.sum()
+
+            # agent interactions
+            dists = ((xa[:, 0] - x[j][0]) ** 2 + (xa[:, 1] - x[j][1]) ** 2) ** 0.5
+            v_0 = SwarmEnv.s(dists, F, L) * (xa[:, 0] - x[j][0]) / (dists + 0.000001)
+            v_1 = SwarmEnv.s(dists, F, L) * (xa[:, 1] - x[j][1]) / (dists + 0.000001)
+            v[j][0] += v_0.sum()
+            v[j][1] += v_1.sum()
+        energy = (v ** 2).sum(axis=1).mean()
         return v, -energy
 

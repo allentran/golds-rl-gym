@@ -24,3 +24,11 @@ register(
     max_episode_steps=128,
 )
 
+
+register(
+    id='Swarm-eval-v0',
+    entry_point='fed_gym.envs:SwarmEnv',
+    max_episode_steps=128,
+    kwargs=dict(seed=192)
+)
+

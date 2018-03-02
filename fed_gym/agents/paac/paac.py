@@ -9,8 +9,8 @@ import numpy as np
 
 from .actor_learner import *
 from .runners import Runners
-from ..state_processors import SwarmStateProcessor
-from .policy_monitor import PolicyMonitor
+from ..state_processors import SwarmStateProcessor, SolowStateProcessor
+from .policy_monitor import SolowPolicyMonitor, SwarmPolicyMonitor
 
 
 class PAACLearner(ActorLearner):
@@ -59,6 +59,23 @@ class PAACLearner(ActorLearner):
 
         self.global_step = self.init_network()
 
+        coord = tf.train.Coordinator()
+        pe = SolowPolicyMonitor(
+            env=gym.envs.make("Solow-1-1-finite-eval-v0"),
+            global_policy_net=self.network,
+            state_processor=SolowStateProcessor(),
+            summary_writer=self.summary_writer,
+            saver=None,
+            network_conf=self.network.conf,
+        )
+
+        monitor_thread = threading.Thread(
+            target=lambda: pe.continuous_eval(
+                10., self.session, coord, self.rnn_length
+            )
+        )
+        monitor_thread.start()
+
         logging.debug("Starting training at Step {}".format(self.global_step))
         counter = 0
 
@@ -79,7 +96,7 @@ class PAACLearner(ActorLearner):
             (np.zeros((self.emulator_counts, self.num_actions), dtype=np.float32))
         ]
 
-        self.runners = Runners(self.emulators, self.workers, variables, self.emulator_class)
+        self.runners = Runners(self.emulators, self.workers, variables, self.emulator_class, coord)
         self.runners.start()
         shared_states, shared_histories, shared_rewards, shared_episode_over, shared_actions = self.runners.get_shared_variables()
 
@@ -132,10 +149,8 @@ class PAACLearner(ActorLearner):
                     self.global_step += 1
                     if episode_over:
                         total_rewards.append(total_episode_rewards[e_idx] / emulator_steps[e_idx])
-                        episode_summary = tf.Summary(value=[
-                            tf.Summary.Value(tag='rl/reward', simple_value=total_episode_rewards[e_idx]),
-                            tf.Summary.Value(tag='rl/episode_length', simple_value=emulator_steps[e_idx]),
-                        ])
+                        episode_summary = tf.Summary()
+                        episode_summary.value.add(simple_value=total_episode_rewards[e_idx], tag="rl/reward")
                         self.summary_writer.add_summary(episode_summary, self.global_step)
                         self.summary_writer.flush()
                         total_episode_rewards[e_idx] = 0
@@ -171,11 +186,11 @@ class PAACLearner(ActorLearner):
                 self.learning_rate: lr
             }
 
-            _, summaries = self.session.run(
-                [self.train_step, summaries_op],
+            _, summaries, global_step = self.session.run(
+                [self.train_step, summaries_op, self.network.global_step_tensor],
                 feed_dict=feed_dict)
 
-            self.summary_writer.add_summary(summaries, self.global_step)
+            self.summary_writer.add_summary(summaries, global_step)
             self.summary_writer.flush()
 
             counter += 1
@@ -205,31 +220,22 @@ class GridPAACLearner(PAACLearner):
         super().__init__(network_creator, environment_creator, args, emulator_class, state_processor)
         self.real_batch_size = self.emulator_counts * self.N_AGENTS
 
-    def rescale_reward(self, reward):
+    def rescale_reward(self, reward, lb=-2, ub=2):
         return reward
 
     def train(self):
 
-        summary_writer = tf.summary.FileWriter(os.path.join(self.debugging_folder, "train"))
-
         self.global_step = self.init_network()
 
         coord = tf.train.Coordinator()
-        pe = PolicyMonitor(
-            env=gym.envs.make("Swarm-v0"),
+        pe = SwarmPolicyMonitor(
+            env=gym.envs.make("Swarm-eval-v0"),
             global_policy_net=self.network,
             state_processor=SwarmStateProcessor(),
-            summary_writer=summary_writer,
+            summary_writer=self.summary_writer,
             saver=None,
             network_conf=self.network.conf,
         )
-
-        monitor_thread = threading.Thread(
-            target=lambda: pe.continuous_eval(
-                10., self.session, coord, self.rnn_length
-        )
-        )
-        monitor_thread.start()
 
         logging.debug("Starting training at Step {}".format(self.global_step))
 
@@ -261,11 +267,17 @@ class GridPAACLearner(PAACLearner):
             np.zeros((self.emulator_counts, self.N_AGENTS, self.num_actions), dtype=np.float32),
         ]
 
-        self.runners = Runners(self.emulators, self.workers, variables, self.emulator_class)
+        self.runners = Runners(self.emulators, self.workers, variables, self.emulator_class, coord)
         self.runners.start()
         shared_states, shared_histories, shared_positions, shared_rewards, shared_episode_over, shared_actions = self.runners.get_shared_variables()
 
         summaries_op = tf.summary.merge_all()
+        monitor_thread = threading.Thread(
+            target=lambda: pe.continuous_eval(
+                30., self.session, coord, self.rnn_length
+            )
+        )
+        monitor_thread.start()
 
         emulator_steps = [0] * self.emulator_counts
         total_episode_rewards = self.emulator_counts * [0]
@@ -280,13 +292,24 @@ class GridPAACLearner(PAACLearner):
         values = np.zeros((self.max_local_steps, self.real_batch_size))
         episodes_over_masks = np.zeros((self.max_local_steps, self.real_batch_size))
 
+        counter = 0
+        global_step_start = self.global_step
+
+        start_time = time.time()
+
         while self.global_step < self.max_global_steps:
+
+            loop_start_time = time.time()
 
             max_local_steps = self.max_local_steps
             for t in range(max_local_steps):
                 next_actions, readouts_v_t = self._choose_next_actions(shared_states, shared_histories, shared_positions)
                 transformed_actions = self.emulator_class.transform_actions_for_env(next_actions)
-                shared_actions = transformed_actions.reshape(self.emulator_counts, self.N_AGENTS, self.num_actions)
+                transformed_actions = transformed_actions.reshape(self.emulator_counts, self.N_AGENTS, self.num_actions)
+
+                # NEED TO DO THIS FOR SHARED CTYPES ASSIGNMENT (IE DO NOT DO SHARED_ACTIONS = xyz)
+                for idx in range(transformed_actions.shape[0]):
+                    shared_actions[idx] = transformed_actions[idx]
 
                 actions[t] = next_actions
                 positions[t] = shared_positions.reshape((self.real_batch_size, 2))
@@ -303,7 +326,6 @@ class GridPAACLearner(PAACLearner):
                     (self.real_batch_size, )
                 ).astype(np.float32)
 
-                any_over = False
                 for e_idx, (actual_rewards, episode_overs) in enumerate(zip(shared_rewards, shared_episode_over)):
 
                     episode_over = episode_overs[0]
@@ -316,19 +338,13 @@ class GridPAACLearner(PAACLearner):
                     emulator_steps[e_idx] += 1
                     self.global_step += 1
                     if episode_over:
-                        any_over = True
                         total_rewards.append(total_episode_rewards[e_idx] / emulator_steps[e_idx])
-                        episode_summary = tf.Summary(value=[
-                            tf.Summary.Value(tag='rl/reward', simple_value=total_episode_rewards[e_idx]),
-                            tf.Summary.Value(tag='rl/episode_length', simple_value=emulator_steps[e_idx]),
-                        ])
+                        episode_summary = tf.Summary()
+                        episode_summary.value.add(simple_value=total_episode_rewards[e_idx], tag="rl/reward")
                         self.summary_writer.add_summary(episode_summary, self.global_step)
                         self.summary_writer.flush()
                         total_episode_rewards[e_idx] = 0
                         emulator_steps[e_idx] = 0
-
-                if any_over:
-                    print(total_rewards[-1], total_rewards.mean())
 
             next_state_value = self.session.run(
                 self.network.vs,
@@ -363,11 +379,23 @@ class GridPAACLearner(PAACLearner):
                 self.learning_rate: lr
             }
 
-            _, summaries = self.session.run(
-                [self.train_step, summaries_op],
+            _, summaries, global_step = self.session.run(
+                [self.train_step, summaries_op, self.network.global_step_tensor],
                 feed_dict=feed_dict)
-            self.summary_writer.add_summary(summaries, self.global_step)
+            self.summary_writer.add_summary(summaries, global_step)
             self.summary_writer.flush()
+
+            counter += 1
+
+            if counter % (5048 / self.emulator_counts) == 0:
+                curr_time = time.time()
+                global_steps = self.global_step
+                last_ten = 0.0 if len(total_rewards) < 1 else np.mean(total_rewards[-10:])
+                logging.info("Ran {} steps, at {} steps/s ({} steps/s avg), last 10 rewards avg {}"
+                             .format(global_steps,
+                                     self.max_local_steps * self.emulator_counts / (curr_time - loop_start_time),
+                                     (global_steps - global_step_start) / (curr_time - start_time),
+                                     last_ten))
 
             self.save_vars()
 
@@ -382,18 +410,7 @@ class GridPAACLearner(PAACLearner):
 
     @staticmethod
     def choose_next_actions(network, num_actions, states, histories, agent_positions, session):
-        network_output_mu, network_output_sigma, network_output_v = session.run(
-            [
-                network.mu,
-                network.sigma,
-                network.vs
-            ],
-            feed_dict={
-                network.states: states,
-                network.history: histories,
-                network.agent_positions: agent_positions
-            }
-        )
+        output = network.predict(states, histories, agent_positions, session)
+        network_output_mu, network_output_sigma, network_output_v = output['mu'], output['sigma'], output['vs']
         new_actions = network_output_mu + network_output_sigma * np.random.normal(size=network_output_mu.shape)
-
         return new_actions, network_output_v

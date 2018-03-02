@@ -7,6 +7,7 @@ class ConvPolicyVNetwork(ConvNetwork):
         super().__init__(conf)
         self.fc_hidden = 32
         self.rnn_layers = 2
+        self.use_rnn = False
 
         with tf.device(conf['device']):
             with tf.name_scope(self.name):
@@ -16,7 +17,8 @@ class ConvPolicyVNetwork(ConvNetwork):
                 final_width = int(self.width / (2 ** self.conv_layers))
 
                 with tf.variable_scope('process_input'):
-                    cnn_history = tf.reshape(self.history, (-1, self.height, self.width, self.channels))
+                    if self.use_rnn:
+                        cnn_history = tf.reshape(self.history, (-1, self.height, self.width, self.channels))
                     cnn_state = self.states
                     for idx in range(self.conv_layers):
                         conv = tf.layers.Conv2D(
@@ -30,26 +32,30 @@ class ConvPolicyVNetwork(ConvNetwork):
                             strides=2,
                         )
 
-                        cnn_history = maxpool(conv(cnn_history))
+                        if self.use_rnn:
+                            cnn_history = maxpool(conv(cnn_history))
                         cnn_state = maxpool(conv(cnn_state))
 
                     dense1 = tf.layers.Dense(2 * self.fc_hidden, activation=tf.nn.relu)
                     dense2 = tf.layers.Dense(self.fc_hidden, activation=tf.nn.relu)
-                    flattened_history = tf.reshape(cnn_history, (n_batches, t, final_height * final_width * self.filters))
 
                     flattened_state = tf.reshape(cnn_state, (n_batches, final_height * final_width * self.filters))
                     dense_state = dense2(dense1(flattened_state))
 
-                    rnn_cell = tf.nn.rnn_cell.MultiRNNCell([make_cell(self.fc_hidden, True) for _ in range(self.rnn_layers)])
-                    outputs, state = tf.nn.dynamic_rnn(
-                        rnn_cell, flattened_history, dtype=tf.float32,
-                    )
-                    rnn_last = state[-1]
+                    if self.use_rnn:
+                        flattened_history = tf.reshape(cnn_history, (n_batches, t, final_height * final_width * self.filters))
+                        rnn_cell = tf.nn.rnn_cell.MultiRNNCell([make_cell(self.fc_hidden, True) for _ in range(self.rnn_layers)])
+                        outputs, state = tf.nn.dynamic_rnn(
+                            rnn_cell, flattened_history, dtype=tf.float32,
+                        )
+                        rnn_last = state[-1]
 
-                    dense_temporal = tf.layers.dense(rnn_last, 2 * self.fc_hidden, activation=tf.nn.relu)
-                    dense_temporal = tf.layers.dense(dense_temporal, self.fc_hidden, activation=tf.nn.relu)
+                        dense_temporal = tf.layers.dense(rnn_last, 2 * self.fc_hidden, activation=tf.nn.relu)
+                        dense_temporal = tf.layers.dense(dense_temporal, self.fc_hidden, activation=tf.nn.relu)
 
-                    self.processed_state = tf.concat([dense_state, dense_temporal], axis=-1)
+                        self.processed_state = tf.concat([dense_state, dense_temporal], axis=-1)
+                    else:
+                        self.processed_state = dense_state
 
                 with tf.variable_scope('policy'):
                     actions = tf.layers.dense(self.processed_state, 2 * self.fc_hidden, activation=tf.nn.relu)
@@ -82,7 +88,7 @@ class ConvPolicyVNetwork(ConvNetwork):
                 with tf.variable_scope('v_s'):
                     vs = tf.layers.dense(self.processed_state, self.fc_hidden * 2, activation=tf.nn.relu)
                     vs = tf.layers.dense(vs, self.fc_hidden, activation=tf.nn.relu)
-                    vs = tf.layers.dense(vs, self.height * self.width, activation=None)
+                    vs = - tf.layers.dense(vs, self.height * self.width, activation=tf.nn.softplus)
                     vs = self.scale * tf.reshape(vs, (n_batches, self.height, self.width))
 
                 self.vs = tf.gather_nd(vs, agent_positions)
@@ -96,11 +102,12 @@ class ConvPolicyVNetwork(ConvNetwork):
     def predict(self, states, histories, positions, session):
         feed_dict = {
             self.states: states,
-            self.history: histories,
+            # self.history: histories,
             self.agent_positions: positions
         }
         return session.run(
             {
+                'vs': self.vs,
                 'mu': self.mu,
                 'sigma': self.sigma,
             },
@@ -160,10 +167,22 @@ class FlatPolicyVNetwork(FlatNetwork):
                     )
                     self.vs = tf.squeeze(self.vs, squeeze_dims=[1], name="logits")
 
-                self.critic_loss = tf.squared_difference(self.vs, self.critic_target)
+                self.critic_loss = tf.squared_difference(self.vs, self.critic_target) / self.scale
                 self.critic_loss_mean = tf.reduce_mean(0.25 * self.critic_loss, name='mean_critic_loss')
 
                 # Loss scaling is used because the learning rate was initially runed tuned to be used with
                 # max_local_steps = 5 and summing over timesteps, which is now replaced with the mean.
                 self.loss = self.policy_loss + self.critic_loss_mean
 
+    def predict(self, states, histories, session):
+        feed_dict = {
+            self.states: states,
+            self.history: histories,
+        }
+        return session.run(
+            {
+                'mu': self.mu,
+                'sigma': self.sigma,
+            },
+            feed_dict
+        )

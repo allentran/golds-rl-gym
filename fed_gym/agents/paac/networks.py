@@ -113,6 +113,7 @@ class Network(object):
 
         with tf.device(self.device):
             with tf.name_scope(self.name):
+                self.global_step_tensor = tf.Variable(0, name='global_step',trainable=False)
                 self.critic_target = tf.placeholder("float32", (None, ), name='target')
                 self.advantages = tf.placeholder("float", (None, ), name='advantage')
 

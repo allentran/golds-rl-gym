@@ -39,22 +39,13 @@ class SwarmStateProcessor(StateProcessor):
             x, y = xs[j], ys[j]
             u[x, y] += 1
 
-        return u
+        return u / N
 
     @staticmethod
     def get_bounding_box(position_arrays):
-        x_min, x_max, y_min, y_max = np.inf, -np.inf, np.inf, -np.inf
         array = np.vstack(position_arrays)
-        a_xmin, a_ymin = array.min(axis=0)
-        a_xmax, a_ymax = array.max(axis=0)
-        if a_xmin < x_min:
-            x_min = a_xmin
-        if a_xmax > x_max:
-            x_max = a_xmax
-        if a_ymin < y_min:
-            y_min = a_ymin
-        if a_ymax > y_max:
-            y_max = a_ymax
+        x_min, y_min = array.min(axis=0)
+        x_max, y_max = array.max(axis=0)
         return x_min, x_max + 1e-6, y_min, y_max + 1e-6
 
     def process_state(self, state):
