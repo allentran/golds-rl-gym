@@ -78,7 +78,7 @@ class SolowPolicyMonitor(PolicyMonitor):
 
     def eval_once(self, sess, max_sequence_length=5):
         with sess.as_default(), sess.graph.as_default():
-            global_step, _ = sess.run([tf.train.get_global_step(), self.copy_params_op])
+            global_step, _ = sess.run([self.global_policy_net.global_step_tensor, self.copy_params_op])
             histories = []
 
             # Run an episode
@@ -114,7 +114,7 @@ class SolowPolicyMonitor(PolicyMonitor):
 
             tf.logging.info(
                 "Eval results at step {}: avg_reward {}, std_reward {}, episode_length {}".format(
-                    tf.train.get_global_step(), np.mean(rewards), np.std(rewards), episode_length
+                    global_step, np.mean(rewards), np.std(rewards), episode_length
                 )
             )
 
@@ -136,7 +136,7 @@ class SwarmPolicyMonitor(PolicyMonitor):
     def eval_once(self, sess, max_sequence_length=5, actions: queue.Queue=None):
         with sess.as_default(), sess.graph.as_default():
             # Copy params to local model
-            global_step, _ = sess.run([tf.train.get_global_step(), self.copy_params_op])
+            global_step, _ = sess.run([self.global_policy_net.global_step_tensor, self.copy_params_op])
             histories = []
 
             # Run an episode
@@ -179,7 +179,7 @@ class SwarmPolicyMonitor(PolicyMonitor):
 
             tf.logging.info(
                 "Eval results at step {}: avg_reward {}, std_reward {}, episode_length {}".format(
-                    tf.train.get_global_step(), np.mean(rewards), np.std(rewards), episode_length
+                    global_step, np.mean(rewards), np.std(rewards), episode_length
                 )
             )
 
