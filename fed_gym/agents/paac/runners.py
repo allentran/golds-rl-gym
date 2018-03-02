@@ -8,11 +8,12 @@ class Runners(object):
 
     NUMPY_TO_C_DTYPE = {np.float32: c_float, np.float64: c_double, np.uint8: c_uint, np.int32: c_uint}
 
-    def __init__(self, emulators, workers, variables, emulator_class):
+    def __init__(self, emulators, workers, variables, emulator_class, coord):
         self.variables = [self._get_shared(var) for var in variables]
         self.workers = workers
         self.queues = [Queue() for _ in range(workers)]
         self.barrier = Queue()
+        self.coord = coord
 
         self.runners = [emulator_class(i, emulators, vars, self.queues[i], self.barrier) for i, (emulators, vars) in
                         enumerate(zip(np.split(emulators, workers), zip(*[np.split(var, workers) for var in self.variables])))]
@@ -42,6 +43,9 @@ class Runners(object):
         return self.variables
 
     def update_environments(self):
+        if self.coord.should_stop():
+            self.stop()
+            return
         for queue in self.queues:
             queue.put(True)
 

@@ -98,7 +98,7 @@ class PAACLearner(ActorLearner):
             (np.zeros((self.emulator_counts, self.num_actions), dtype=np.float32))
         ]
 
-        self.runners = Runners(self.emulators, self.workers, variables, self.emulator_class)
+        self.runners = Runners(self.emulators, self.workers, variables, self.emulator_class, coord)
         self.runners.start()
         shared_states, shared_histories, shared_rewards, shared_episode_over, shared_actions = self.runners.get_shared_variables()
 
@@ -273,16 +273,14 @@ class GridPAACLearner(PAACLearner):
             np.zeros((self.emulator_counts, self.N_AGENTS, self.num_actions), dtype=np.float32),
         ]
 
-        self.runners = Runners(self.emulators, self.workers, variables, self.emulator_class)
+        self.runners = Runners(self.emulators, self.workers, variables, self.emulator_class, coord)
         self.runners.start()
         shared_states, shared_histories, shared_positions, shared_rewards, shared_episode_over, shared_actions = self.runners.get_shared_variables()
 
         summaries_op = tf.summary.merge_all()
-        # s, h, p = pe.eval_once(self.session)
-        # self.choose_next_actions(self.network, self.num_actions, s, h, p, self.session)
         monitor_thread = threading.Thread(
             target=lambda: pe.continuous_eval(
-                10., self.session, coord, self.rnn_length
+                30., self.session, coord, self.rnn_length
             )
         )
         monitor_thread.start()
@@ -330,9 +328,9 @@ class GridPAACLearner(PAACLearner):
                 self.runners.wait_updated()
                 # Done updating all environments, have new states, rewards and is_over
 
-                # episodes_over_masks[t] = 1.0 - shared_episode_over.reshape(
-                #     (self.real_batch_size, )
-                # ).astype(np.float32)
+                episodes_over_masks[t] = 1.0 - shared_episode_over.reshape(
+                    (self.real_batch_size, )
+                ).astype(np.float32)
 
                 for e_idx, (actual_rewards, episode_overs) in enumerate(zip(shared_rewards, shared_episode_over)):
 
@@ -368,7 +366,7 @@ class GridPAACLearner(PAACLearner):
             estimated_return = np.copy(next_state_value)
 
             for t in reversed(range(max_local_steps)):
-                estimated_return = rewards[t] + self.gamma * estimated_return #* episodes_over_masks[t]
+                estimated_return = rewards[t] + self.gamma * estimated_return * episodes_over_masks[t]
                 y_batch[t] = np.copy(estimated_return)
                 adv_batch[t] = estimated_return - values[t]
 
@@ -413,18 +411,10 @@ class GridPAACLearner(PAACLearner):
         self.cleanup()
 
     def _choose_next_actions(self, states, histories, positions):
-        # states = states.reshape((self.real_batch_size, ) + states.shape[2:])
-        # histories = histories.reshape((self.real_batch_size, *histories.shape[2:]))
-        # positions = positions.reshape((self.real_batch_size, 2))
-        actions = []
-        vs = []
-        for idx in range(len(states)):
-            a, v = self.choose_next_actions(self.network, self.num_actions, states[idx], histories[idx], positions[idx], self.session)
-            actions.append(a)
-            vs.append(v)
-        z = np.array(actions).reshape((-1, 2))
-        k = np.array(vs).reshape((-1, ))
-        return z, k
+        states = states.reshape((self.real_batch_size, ) + states.shape[2:])
+        histories = histories.reshape((self.real_batch_size, *histories.shape[2:]))
+        positions = positions.reshape((self.real_batch_size, 2))
+        return self.choose_next_actions(self.network, self.num_actions, states, histories, positions, self.session)
 
     @staticmethod
     def choose_next_actions(network, num_actions, states, histories, agent_positions, session):
