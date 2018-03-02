@@ -190,11 +190,11 @@ class PAACLearner(ActorLearner):
                 self.learning_rate: lr
             }
 
-            _, summaries = self.session.run(
-                [self.train_step, summaries_op],
+            _, summaries, global_step = self.session.run(
+                [self.train_step, summaries_op, self.network.global_step_tensor],
                 feed_dict=feed_dict)
 
-            self.summary_writer.add_summary(summaries, self.global_step)
+            self.summary_writer.add_summary(summaries, global_step)
             self.summary_writer.flush()
 
             counter += 1
@@ -387,10 +387,10 @@ class GridPAACLearner(PAACLearner):
                 self.learning_rate: lr
             }
 
-            _, summaries = self.session.run(
-                [self.train_step, summaries_op],
+            _, summaries, global_step = self.session.run(
+                [self.train_step, summaries_op, self.network.global_step_tensor],
                 feed_dict=feed_dict)
-            self.summary_writer.add_summary(summaries, self.global_step)
+            self.summary_writer.add_summary(summaries, global_step)
             self.summary_writer.flush()
 
             counter += 1

@@ -28,7 +28,6 @@ class PolicyMonitor(object):
         self.global_policy_net = global_policy_net
         self.summary_writer = summary_writer
         self.saver = saver
-        self.global_step = 0
 
         self.checkpoint_path = os.path.abspath(os.path.join(summary_writer.get_logdir(), "../checkpoints/model"))
 
@@ -40,7 +39,6 @@ class PolicyMonitor(object):
         self.copy_params_op = make_copy_params_op(
             tf.contrib.slim.get_variables(scope="global", collection=tf.GraphKeys.TRAINABLE_VARIABLES),
             tf.contrib.slim.get_variables(scope="policy_eval", collection=tf.GraphKeys.TRAINABLE_VARIABLES))
-
 
     def get_action_from_policy(self, processed_state, history, positions, sess):
         raise NotImplementedError
@@ -81,7 +79,6 @@ class SolowPolicyMonitor(PolicyMonitor):
     def eval_once(self, sess, max_sequence_length=5):
         with sess.as_default(), sess.graph.as_default():
             sess.run(self.copy_params_op)
-            self.global_step += 1
             histories = []
 
             # Run an episode
@@ -129,8 +126,7 @@ class SwarmPolicyMonitor(PolicyMonitor):
     def get_action_from_policy(self, processed_state, history, positions, sess):
         predictions = self.policy_net.predict(processed_state, history, positions, sess)
         mu, sigma = predictions['mu'], predictions['sigma']
-        # new_actions = mu + sigma * np.random.normal(size=mu.shape)
-        new_actions = mu
+        new_actions = mu + sigma * np.random.normal(size=mu.shape)
         return SwarmRunner.transform_actions_for_env(new_actions)
 
     @staticmethod
@@ -141,7 +137,6 @@ class SwarmPolicyMonitor(PolicyMonitor):
         with sess.as_default(), sess.graph.as_default():
             # Copy params to local model
             sess.run(self.copy_params_op)
-            self.global_step += 1
             histories = []
 
             # Run an episode

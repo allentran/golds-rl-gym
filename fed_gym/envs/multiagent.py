@@ -45,7 +45,7 @@ class SwarmEnv(gym.Env):
 
     def _reset(self):
         if self.n_seed:
-            np.random.seed(1692)
+            np.random.seed(self.n_seed)
         self.t = 0
 
         x = np.random.rand(self.N_LOCUSTS, 2)
