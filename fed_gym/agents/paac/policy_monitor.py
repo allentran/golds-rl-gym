@@ -41,7 +41,10 @@ class PolicyMonitor(object):
             tf.contrib.slim.get_variables(scope="policy_eval", collection=tf.GraphKeys.TRAINABLE_VARIABLES))
 
     def get_action_from_policy(self, processed_state, history, positions, sess):
-        raise NotImplementedError
+        predictions = self.policy_net.predict(processed_state, history, positions, sess)
+        mu, sigma = predictions['mu'], predictions['sigma']
+        new_actions = mu + sigma * np.random.normal(size=mu.shape)
+        return new_actions
 
     @staticmethod
     def _create_policy_estimator(conf):
@@ -69,8 +72,8 @@ class PolicyMonitor(object):
 class SolowPolicyMonitor(PolicyMonitor):
 
     def get_action_from_policy(self, processed_state, history, positions, sess):
-        mu = self.policy_net.predict(processed_state, history, sess)['mu']
-        return SolowRunner.transform_actions_for_env(mu)
+        raw_actions = super().get_action_from_policy(processed_state, history, positions, sess)
+        return SolowRunner.transform_actions_for_env(raw_actions)
 
     @staticmethod
     def _create_policy_estimator(conf):
@@ -124,10 +127,8 @@ class SolowPolicyMonitor(PolicyMonitor):
 class SwarmPolicyMonitor(PolicyMonitor):
 
     def get_action_from_policy(self, processed_state, history, positions, sess):
-        predictions = self.policy_net.predict(processed_state, history, positions, sess)
-        mu, sigma = predictions['mu'], predictions['sigma']
-        new_actions = mu + sigma * np.random.normal(size=mu.shape)
-        return SwarmRunner.transform_actions_for_env(new_actions)
+        raw_actions = super().get_action_from_policy(processed_state, history, positions, sess)
+        return SwarmRunner.transform_actions_for_env(raw_actions)
 
     @staticmethod
     def _create_policy_estimator(conf):
