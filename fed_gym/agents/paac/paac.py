@@ -227,8 +227,6 @@ class GridPAACLearner(PAACLearner):
 
     def train(self):
 
-        summary_writer = tf.summary.FileWriter(os.path.join(self.debugging_folder, "train"))
-
         self.global_step = self.init_network()
 
         coord = tf.train.Coordinator()
@@ -236,7 +234,7 @@ class GridPAACLearner(PAACLearner):
             env=gym.envs.make("Swarm-eval-v0"),
             global_policy_net=self.network,
             state_processor=SwarmStateProcessor(),
-            summary_writer=summary_writer,
+            summary_writer=self.summary_writer,
             saver=None,
             network_conf=self.network.conf,
         )
