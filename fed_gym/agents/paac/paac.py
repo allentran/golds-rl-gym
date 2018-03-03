@@ -292,7 +292,7 @@ class GridPAACLearner(PAACLearner):
         positions = np.zeros((self.max_local_steps, self.real_batch_size, 2))
         histories = np.zeros((self.max_local_steps, self.real_batch_size, self.rnn_length, *states.shape[-3:]))
         values = np.zeros((self.max_local_steps, self.real_batch_size))
-        episodes_over_masks = np.zeros((self.max_local_steps, self.real_batch_size))
+        # episodes_over_masks = np.zeros((self.max_local_steps, self.real_batch_size))
 
         counter = 0
         global_step_start = self.global_step
@@ -324,9 +324,9 @@ class GridPAACLearner(PAACLearner):
                 self.runners.wait_updated()
                 # Done updating all environments, have new states, rewards and is_over
 
-                episodes_over_masks[t] = 1.0 - shared_episode_over.reshape(
-                    (self.real_batch_size, )
-                ).astype(np.float32)
+                # episodes_over_masks[t] = 1.0 - shared_episode_over.reshape(
+                #     (self.real_batch_size, )
+                # ).astype(np.float32)
 
                 for e_idx, (actual_rewards, episode_overs) in enumerate(zip(shared_rewards, shared_episode_over)):
 
@@ -360,7 +360,7 @@ class GridPAACLearner(PAACLearner):
             estimated_return = np.copy(next_state_value)
 
             for t in reversed(range(max_local_steps)):
-                estimated_return = rewards[t] + self.gamma * estimated_return * episodes_over_masks[t]
+                estimated_return = rewards[t] + self.gamma * estimated_return #* episodes_over_masks[t]
                 y_batch[t] = np.copy(estimated_return)
                 adv_batch[t] = estimated_return - values[t]
 
