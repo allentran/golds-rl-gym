@@ -14,46 +14,31 @@ class StateProcessor(object):
 
 class SwarmStateProcessor(StateProcessor):
 
-    def __init__(self, scales=1., grid_size=40):
+    def __init__(self, scales=1., grid_size=20):
         super().__init__(scales)
         self.grid_size = grid_size
         self.positions = None
 
-    def hist_calc(self, x, update_position=False, min_x=None, max_x=None, min_y=None, max_y=None):
-        N = x.shape[0]
-        u = np.zeros((self.grid_size, self.grid_size))
+        self.WIDTH = 3.
+        self.HEIGHT = 3.
 
-        if update_position:
-            self.positions = np.zeros((N, 2), dtype='int32')
-
-        frac_x = (x[:, 0] - min_x) / (max_x - min_x)
-        frac_y = (x[:, 1] - min_y) / (max_y - min_y)
-
-        xs = np.floor(self.grid_size * frac_x).astype('int32')
-        ys = np.floor(self.grid_size * frac_y).astype('int32')
-
-        if update_position:
-            self.positions = np.hstack([xs[:, None], ys[:, None]])
-
-        for j in range(N):
-            x, y = xs[j], ys[j]
-            u[x, y] += 1
-
-        return u / N
-
-    @staticmethod
-    def get_bounding_box(position_arrays):
-        array = np.vstack(position_arrays)
-        x_min, y_min = array.min(axis=0)
-        x_max, y_max = array.max(axis=0)
-        return x_min, x_max + 1e-6, y_min, y_max + 1e-6
+    def _get_bounding_box(self, x):
+        mean_x = np.median(x, axis=0)[0]
+        return [[mean_x - self.WIDTH / 2., mean_x + self.WIDTH / 2.], [0, self.HEIGHT]]
 
     def process_state(self, state):
-        bounding_box = self.get_bounding_box(state)
-        grid = np.stack(
-            [self.hist_calc(state[0], False, *bounding_box), self.hist_calc(state[1], True, *bounding_box)],
-            axis=-1
-        )
+        bounding_box = self._get_bounding_box(state[0])
+        x_grid, x_edges, y_edges = np.histogram2d(state[0][:, 0], state[0][:, 1], self.grid_size, bounding_box)
+        xa_grid, xa_x_edges, xa_y_edges = np.histogram2d(state[1][:, 0], state[1][:, 1], bins=[x_edges, y_edges])
+        grid = np.stack([x_grid, xa_grid], axis=-1)
+
+        xa_x_idx = np.digitize(state[1][:, 0], x_edges)
+        xa_x_idx[xa_x_idx >= self.grid_size] = self.grid_size - 1
+        xa_y_idx = np.digitize(state[1][:, 1], y_edges)
+        xa_y_idx[xa_y_idx >= self.grid_size] = self.grid_size - 1
+
+        self.positions = np.hstack([xa_x_idx[:, None], xa_y_idx[:, None]]).astype('uint8')
+
         return grid
 
 

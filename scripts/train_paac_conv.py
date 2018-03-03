@@ -34,7 +34,7 @@ def main(args):
 
     network_creator, env_creator = get_network_and_environment_creator(args)
 
-    learner = GridPAACLearner(network_creator, env_creator, args, SwarmRunner, state_processor=SwarmStateProcessor())
+    learner = GridPAACLearner(network_creator, env_creator, args, SwarmRunner, state_processor=SwarmStateProcessor(args.height))
 
     setup_kill_signal_handler(learner)
 
@@ -67,8 +67,8 @@ def get_network_and_environment_creator(args, random_seed=3):
         'num_actions': num_actions,
         'entropy_regularisation_strength': args.entropy_regularisation_strength,
         'device': args.device,
-        'height': 40,
-        'width': 40,
+        'height': args.height,
+        'width': args.height,
         'channels': 2,
         'filters': 3,
         'conv_layers': 2,
@@ -110,6 +110,7 @@ def get_arg_parser():
     parser.add_argument('-df', '--debugging_folder', default='logs/', type=str, help="Folder where to save the debugging information.", dest="debugging_folder")
     parser.add_argument('-rs', '--random_start', default=True, type=bool_arg, help="Whether or not to start with 30 noops for each env. Default True", dest="random_start")
     parser.add_argument('--scale', default=1000., type=float)
+    parser.add_argument('--height', default=20, type=int)
     parser.add_argument('--rnn-length', default=5, type=int)
     parser.add_argument('--static-size', default=2, type=int)
     parser.add_argument('--temporal-size', default=2, type=int)
