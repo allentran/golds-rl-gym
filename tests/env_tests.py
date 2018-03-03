@@ -3,6 +3,7 @@ import unittest
 import numpy as np
 
 from fed_gym.envs import fed_env, multiagent
+from fed_gym.agents.state_processors import SwarmStateProcessor
 
 
 class SwarmTests(unittest.TestCase):
@@ -22,6 +23,25 @@ class SwarmTests(unittest.TestCase):
         self.assertEqual(state[1].shape, (env.N_AGENTS, 2))
         self.assertLess(reward, 0.)
         self.assertFalse(done)
+
+    def bounding_box_test(self):
+        state_processor = SwarmStateProcessor()
+        env = multiagent.SwarmEnv()
+        env.reset()
+        action = np.zeros((10, 2))
+        for _ in range(200):
+            state, reward, done, _ = env.step(action)
+            state_processor.process_state(state)
+
+        max_x, max_y = state[0].max(axis=0)
+        min_x, min_y = state[0].min(axis=0)
+
+        bounding_box = state_processor._get_bounding_box(state[0])
+
+        self.assertTrue(max_x < bounding_box[0][1])
+        self.assertTrue(min_x > bounding_box[0][0])
+        self.assertTrue(max_y < bounding_box[1][1])
+        self.assertTrue(min_y >= bounding_box[1][0])
 
 
 class TickerEnvTests(unittest.TestCase):

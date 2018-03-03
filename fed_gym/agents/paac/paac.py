@@ -231,7 +231,7 @@ class GridPAACLearner(PAACLearner):
         pe = SwarmPolicyMonitor(
             env=gym.envs.make("Swarm-eval-v0"),
             global_policy_net=self.network,
-            state_processor=SwarmStateProcessor(),
+            state_processor=SwarmStateProcessor(grid_size=self.network.height),
             summary_writer=self.summary_writer,
             saver=None,
             network_conf=self.network.conf,
@@ -257,7 +257,9 @@ class GridPAACLearner(PAACLearner):
         temporal_state_matrix = tf.keras.preprocessing.sequence.pad_sequences(
             temporal_state_matrix, dtype='float32', padding='post', maxlen=self.rnn_length
         )
-        temporal_state_matrix = np.reshape(temporal_state_matrix, (self.emulator_counts, self.N_AGENTS, self.rnn_length, 40, 40, 2))
+        temporal_state_matrix = np.reshape(
+            temporal_state_matrix, (self.emulator_counts, self.N_AGENTS, self.rnn_length, *temporal_state_matrix.shape[-3:])
+        )
         variables = [
             initial_states,
             temporal_state_matrix,
@@ -285,10 +287,10 @@ class GridPAACLearner(PAACLearner):
         y_batch = np.zeros((self.max_local_steps, self.real_batch_size))
         adv_batch = np.zeros((self.max_local_steps, self.real_batch_size))
         rewards = np.zeros((self.max_local_steps, self.real_batch_size))
-        states = np.zeros([self.max_local_steps, self.real_batch_size, 40, 40, 2])
+        states = np.zeros([self.max_local_steps, self.real_batch_size, self.state_processor.grid_size, self.state_processor.grid_size, 2])
         actions = np.zeros((self.max_local_steps, self.real_batch_size, self.num_actions))
         positions = np.zeros((self.max_local_steps, self.real_batch_size, 2))
-        histories = np.zeros((self.max_local_steps, self.real_batch_size, self.rnn_length, 40, 40, 2))
+        histories = np.zeros((self.max_local_steps, self.real_batch_size, self.rnn_length, *states.shape[-3:]))
         values = np.zeros((self.max_local_steps, self.real_batch_size))
         episodes_over_masks = np.zeros((self.max_local_steps, self.real_batch_size))
 
@@ -381,7 +383,8 @@ class GridPAACLearner(PAACLearner):
 
             _, summaries, global_step = self.session.run(
                 [self.train_step, summaries_op, self.network.global_step_tensor],
-                feed_dict=feed_dict)
+                feed_dict=feed_dict
+            )
             self.summary_writer.add_summary(summaries, global_step)
             self.summary_writer.flush()
 
