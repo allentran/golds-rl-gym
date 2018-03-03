@@ -30,7 +30,7 @@ class SwarmStateProcessor(StateProcessor):
         bounding_box = self._get_bounding_box(state[0])
         x_grid, x_edges, y_edges = np.histogram2d(state[0][:, 0], state[0][:, 1], self.grid_size, bounding_box)
         xa_grid, xa_x_edges, xa_y_edges = np.histogram2d(state[1][:, 0], state[1][:, 1], bins=[x_edges, y_edges])
-        grid = np.stack([x_grid, xa_grid], axis=-1)
+        grid = np.stack([x_grid / len(state[0]), xa_grid / len(state[1])], axis=-1)
 
         xa_x_idx = np.digitize(state[1][:, 0], x_edges)
         xa_x_idx[xa_x_idx >= self.grid_size] = self.grid_size - 1
