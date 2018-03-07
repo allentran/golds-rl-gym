@@ -8,7 +8,7 @@ import gym
 import numpy as np
 
 from .actor_learner import *
-from .runners import Runners
+from .runners import GridRunners, Runners
 from ..state_processors import SwarmStateProcessor, SolowStateProcessor
 from .policy_monitor import SolowPolicyMonitor, SwarmPolicyMonitor
 
@@ -269,7 +269,7 @@ class GridPAACLearner(PAACLearner):
             np.zeros((self.emulator_counts, self.N_AGENTS, self.num_actions), dtype=np.float32),
         ]
 
-        self.runners = Runners(self.emulators, self.workers, variables, self.emulator_class, coord)
+        self.runners = GridRunners(self.emulators, self.workers, variables, self.emulator_class, coord, self.network.height)
         self.runners.start()
         shared_states, shared_histories, shared_positions, shared_rewards, shared_episode_over, shared_actions = self.runners.get_shared_variables()
 

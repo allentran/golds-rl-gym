@@ -52,3 +52,15 @@ class Runners(object):
     def wait_updated(self):
         for wd in range(self.workers):
             self.barrier.get()
+
+
+class GridRunners(Runners):
+    def __init__(self, emulators, workers, variables, emulator_class, coord, grid_size):
+        self.variables = [self._get_shared(var) for var in variables]
+        self.workers = workers
+        self.queues = [Queue() for _ in range(workers)]
+        self.barrier = Queue()
+        self.coord = coord
+
+        self.runners = [emulator_class(i, emulators, vars, self.queues[i], self.barrier, grid_size) for i, (emulators, vars) in
+                        enumerate(zip(np.split(emulators, workers), zip(*[np.split(var, workers) for var in self.variables])))]

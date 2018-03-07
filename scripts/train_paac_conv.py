@@ -33,8 +33,9 @@ def main(args):
     logging.debug('Configuration: {}'.format(args))
 
     network_creator, env_creator = get_network_and_environment_creator(args)
-
-    learner = GridPAACLearner(network_creator, env_creator, args, SwarmRunner, state_processor=SwarmStateProcessor(args.height))
+    learner = GridPAACLearner(
+        network_creator, env_creator, args, SwarmRunner, state_processor=SwarmStateProcessor(grid_size=args.height)
+    )
 
     setup_kill_signal_handler(learner)
 

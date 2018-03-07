@@ -90,10 +90,10 @@ class SwarmRunner(EmulatorRunner):
 
     MAX_MOVE_NORM = 1
 
-    def __init__(self, id, emulators, variables, queue, barrier):
+    def __init__(self, id, emulators, variables, queue, barrier, grid_size):
         super().__init__(id, emulators, variables, queue, barrier)
         self.rnn_length = self.variables[self.HISTORY_IDX].shape[2]
-        self.state_processor = SwarmStateProcessor()
+        self.state_processor = SwarmStateProcessor(grid_size=grid_size)
 
     @staticmethod
     def get_local_states(state, agent_positions):
