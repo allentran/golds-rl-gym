@@ -6,35 +6,33 @@ class ConvSingleAgentPolicyNetwork(ConvSingleAgentNetwork):
 
     def __init__(self, conf):
         super().__init__(conf)
-        self.fc_hidden = 32
+        self.fc_hidden = 256
 
         with tf.device(conf['device']):
             with tf.name_scope(self.name):
-
-                n_batches = tf.shape(self.states)[0]
-                final_height = int(self.height / (2 ** self.conv_layers))
-                final_width = int(self.width / (2 ** self.conv_layers))
-
                 with tf.variable_scope('process_input'):
-                    cnn_state = self.states
-                    for idx in range(self.conv_layers):
-                        conv = tf.layers.Conv2D(
-                            self.filters * (idx + 1),
-                            kernel_size=3,
-                            padding='same',
-                            activation=tf.nn.relu
-                        )
-                        maxpool = tf.layers.MaxPooling2D(
-                            pool_size=(2, 2),
-                            strides=2,
-                        )
-
-                        cnn_state = maxpool(conv(cnn_state))
+                    conv = tf.layers.Conv2D(
+                        32,
+                        kernel_size=8,
+                        strides=4,
+                        activation=tf.nn.relu
+                    )(self.states)
+                    conv = tf.layers.Conv2D(
+                        64,
+                        kernel_size=4,
+                        strides=2,
+                        activation=tf.nn.relu
+                    )(conv)
+                    conv = tf.layers.Conv2D(
+                        64,
+                        kernel_size=3,
+                        activation=tf.nn.relu
+                    )(conv)
 
                     dense1 = tf.layers.Dense(2 * self.fc_hidden, activation=tf.nn.relu)
                     dense2 = tf.layers.Dense(self.fc_hidden, activation=tf.nn.relu)
 
-                    flattened_state = tf.reshape(cnn_state, (n_batches, final_height * final_width * self.filters * self.conv_layers))
+                    flattened_state = tf.layers.flatten(conv)
                     self.processed_state = dense2(dense1(flattened_state))
 
                 with tf.variable_scope('policy'):

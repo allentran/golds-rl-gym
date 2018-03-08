@@ -111,7 +111,7 @@ def get_arg_parser():
     parser.add_argument('-df', '--debugging_folder', default='logs/', type=str, help="Folder where to save the debugging information.", dest="debugging_folder")
     parser.add_argument('-rs', '--random_start', default=True, type=bool_arg, help="Whether or not to start with 30 noops for each env. Default True", dest="random_start")
     parser.add_argument('--scale', default=1000., type=float)
-    parser.add_argument('--height', default=20, type=int)
+    parser.add_argument('--height', default=84, type=int)
     parser.add_argument('--filters', default=32, type=int)
     parser.add_argument('--rnn-length', default=5, type=int)
     parser.add_argument('--static-size', default=2, type=int)

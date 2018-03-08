@@ -25,9 +25,6 @@ class ConvSingleAgentTest(tf.test.TestCase):
 
         num_actions = 3
         n_agents = 10
-        learning_rate = 0.0224
-        epsilon = 0.1
-        decay = 0.99
 
         estimator = ConvSingleAgentPolicyNetwork(
             {
@@ -40,8 +37,8 @@ class ConvSingleAgentTest(tf.test.TestCase):
                 'n_agents': n_agents,
                 'entropy_regularisation_strength': 0.,
                 'scale': 1.,
-                'height': 32,
-                'width': 32,
+                'height': 84,
+                'width': 84,
                 'channels': 3,
                 'filters': 5,
                 'conv_layers': 2
@@ -97,8 +94,8 @@ class ConvSingleAgentTest(tf.test.TestCase):
                 'n_agents': n_batch,
                 'entropy_regularisation_strength': 0.,
                 'scale': 1.,
-                'height': 32,
-                'width': 32,
+                'height': 84,
+                'width': 84,
                 'channels': 3,
                 'filters': 5,
                 'conv_layers': 2
