@@ -103,8 +103,12 @@ class SwarmRunner(EmulatorRunner):
         :param agent_positions:
         :return:
         """
-        # TODO: add noise or black out states
-        return [state] * len(agent_positions)
+        new_states = []
+        for agent in range(len(agent_positions)):
+            grid_position = np.zeros_like(state[:, :, 0])
+            grid_position[agent_positions[agent][0], agent_positions[agent][1]] = 1.
+            new_states.append(np.concatenate([state, grid_position[:, :, None]], axis=-1))
+        return new_states
 
     @staticmethod
     def transform_actions_for_env(actions):

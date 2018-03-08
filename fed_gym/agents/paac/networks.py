@@ -149,7 +149,25 @@ class FlatNetwork(Network):
                 self.history = tf.placeholder(shape=(None, None, self.temporal_size), dtype=tf.float32, name="X_t")
 
 
-class ConvNetwork(Network):
+class ConvSingleAgentNetwork(Network):
+    def __init__(self, conf):
+        super().__init__(conf)
+
+        self.height = conf['height']
+        self.width = conf['width']
+        self.channels = conf['channels']
+        self.filters = conf['filters']
+        self.conv_layers = conf['conv_layers']
+
+        with tf.device(self.device):
+            with tf.name_scope(self.name):
+                self.actions = tf.placeholder(shape=(None, self.num_actions), dtype=tf.float32, name="actions")
+                self.states = tf.placeholder(
+                    shape=(None, self.height, self.width, self.channels), dtype=tf.float32, name="X"
+                )
+
+
+class ConvFieldNetwork(Network):
     def __init__(self, conf):
         super().__init__(conf)
 

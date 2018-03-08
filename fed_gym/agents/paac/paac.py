@@ -287,10 +287,10 @@ class GridPAACLearner(PAACLearner):
         y_batch = np.zeros((self.max_local_steps, self.real_batch_size))
         adv_batch = np.zeros((self.max_local_steps, self.real_batch_size))
         rewards = np.zeros((self.max_local_steps, self.real_batch_size))
-        states = np.zeros([self.max_local_steps, self.real_batch_size, self.state_processor.grid_size, self.state_processor.grid_size, 2])
+        states = np.zeros([self.max_local_steps, self.real_batch_size, self.state_processor.grid_size, self.state_processor.grid_size, self.network.channels])
         actions = np.zeros((self.max_local_steps, self.real_batch_size, self.num_actions))
-        positions = np.zeros((self.max_local_steps, self.real_batch_size, 2))
-        histories = np.zeros((self.max_local_steps, self.real_batch_size, self.rnn_length, *states.shape[-3:]))
+        # positions = np.zeros((self.max_local_steps, self.real_batch_size, 2))
+        # histories = np.zeros((self.max_local_steps, self.real_batch_size, self.rnn_length, *states.shape[-3:]))
         values = np.zeros((self.max_local_steps, self.real_batch_size))
         # episodes_over_masks = np.zeros((self.max_local_steps, self.real_batch_size))
 
@@ -314,10 +314,10 @@ class GridPAACLearner(PAACLearner):
                     shared_actions[idx] = transformed_actions[idx]
 
                 actions[t] = next_actions
-                positions[t] = shared_positions.reshape((self.real_batch_size, 2))
+                # positions[t] = shared_positions.reshape((self.real_batch_size, 2))
                 values[t] = readouts_v_t
                 states[t] = shared_states.reshape((self.real_batch_size, ) + shared_states.shape[-3:])
-                histories[t] = shared_histories.reshape((self.real_batch_size, ) + shared_histories.shape[-4:])
+                # histories[t] = shared_histories.reshape((self.real_batch_size, ) + shared_histories.shape[-4:])
 
                 # Start updating all environments with next_actions
                 self.runners.update_environments()
@@ -352,8 +352,8 @@ class GridPAACLearner(PAACLearner):
                 self.network.vs,
                 feed_dict={
                     self.network.states: np.reshape(shared_states, (self.real_batch_size, *shared_states.shape[2:])),
-                    self.network.history: np.reshape(shared_histories, (self.real_batch_size, *shared_histories.shape[2:])),
-                    self.network.agent_positions: np.reshape(shared_positions, (self.real_batch_size, 2))
+                    # self.network.history: np.reshape(shared_histories, (self.real_batch_size, *shared_histories.shape[2:])),
+                    # self.network.agent_positions: np.reshape(shared_positions, (self.real_batch_size, 2))
                 }
             )
 
@@ -365,16 +365,16 @@ class GridPAACLearner(PAACLearner):
                 adv_batch[t] = estimated_return - values[t]
 
             flat_states = states.reshape((self.max_local_steps * self.real_batch_size, *states.shape[2:]))
-            flat_history = histories.reshape((self.max_local_steps * self.real_batch_size, *histories.shape[2:]))
-            flat_positions = positions.reshape((self.max_local_steps * self.real_batch_size, 2))
+            # flat_history = histories.reshape((self.max_local_steps * self.real_batch_size, *histories.shape[2:]))
+            # flat_positions = positions.reshape((self.max_local_steps * self.real_batch_size, 2))
             flat_y_batch = y_batch.reshape(-1)
             flat_adv_batch = adv_batch.reshape(-1) / self.network.scale
             flat_actions = actions.reshape(max_local_steps * self.real_batch_size, self.num_actions)
             lr = self.get_lr()
             feed_dict = {
                 self.network.states: flat_states,
-                self.network.history: flat_history,
-                self.network.agent_positions: flat_positions,
+                # self.network.history: flat_history,
+                # self.network.agent_positions: flat_positions,
                 self.network.critic_target: flat_y_batch,
                 self.network.actions: flat_actions,
                 self.network.advantages: flat_adv_batch,
@@ -407,13 +407,13 @@ class GridPAACLearner(PAACLearner):
 
     def _choose_next_actions(self, states, histories, positions):
         states = states.reshape((self.real_batch_size, ) + states.shape[2:])
-        histories = histories.reshape((self.real_batch_size, *histories.shape[2:]))
-        positions = positions.reshape((self.real_batch_size, 2))
+        # histories = histories.reshape((self.real_batch_size, *histories.shape[2:]))
+        # positions = positions.reshape((self.real_batch_size, 2))
         return self.choose_next_actions(self.network, self.num_actions, states, histories, positions, self.session)
 
     @staticmethod
     def choose_next_actions(network, num_actions, states, histories, agent_positions, session):
-        output = network.predict(states, histories, agent_positions, session)
+        output = network.predict(states, session)
         network_output_mu, network_output_sigma, network_output_v = output['mu'], output['sigma'], output['vs']
         new_actions = network_output_mu + network_output_sigma * np.random.normal(size=network_output_mu.shape)
         return new_actions, network_output_v

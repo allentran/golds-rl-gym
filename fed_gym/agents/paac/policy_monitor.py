@@ -6,7 +6,7 @@ import numpy as np
 import tensorflow as tf
 from gym.wrappers import Monitor
 
-from .policy_v_network import ConvPolicyVNetwork, FlatPolicyVNetwork
+from .policy_v_network import ConvSingleAgentPolicyNetwork, FlatPolicyVNetwork
 from.emulator_runner import SwarmRunner, SolowRunner
 from ..a3c.worker import make_copy_params_op
 
@@ -127,12 +127,14 @@ class SolowPolicyMonitor(PolicyMonitor):
 class SwarmPolicyMonitor(PolicyMonitor):
 
     def get_action_from_policy(self, processed_state, history, positions, sess):
-        raw_actions = super().get_action_from_policy(processed_state, history, positions, sess)
+        predictions = self.policy_net.predict(processed_state, sess)
+        mu, sigma = predictions['mu'], predictions['sigma']
+        raw_actions = mu + sigma * np.random.normal(size=mu.shape)
         return SwarmRunner.transform_actions_for_env(raw_actions)
 
     @staticmethod
     def _create_policy_estimator(conf):
-        return ConvPolicyVNetwork(conf)
+        return ConvSingleAgentPolicyNetwork(conf)
 
     def eval_once(self, sess, max_sequence_length=5, actions: queue.Queue=None):
         with sess.as_default(), sess.graph.as_default():
