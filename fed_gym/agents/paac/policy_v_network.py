@@ -34,7 +34,7 @@ class ConvSingleAgentPolicyNetwork(ConvSingleAgentNetwork):
                     dense1 = tf.layers.Dense(2 * self.fc_hidden, activation=tf.nn.relu)
                     dense2 = tf.layers.Dense(self.fc_hidden, activation=tf.nn.relu)
 
-                    flattened_state = tf.reshape(cnn_state, (n_batches, final_height * final_width * self.filters))
+                    flattened_state = tf.reshape(cnn_state, (n_batches, final_height * final_width * self.filters * self.conv_layers))
                     self.processed_state = dense2(dense1(flattened_state))
 
                 with tf.variable_scope('policy'):
