@@ -37,9 +37,6 @@ class ConvSingleAgentPolicyNetwork(ConvSingleAgentNetwork):
 
                 with tf.variable_scope('policy'):
                     actions = tf.layers.dense(self.processed_state, 2 * self.fc_hidden, activation=tf.nn.relu)
-                    actions = tf.layers.dense(
-                        actions, self.height * self.width * self.num_actions * 2, activation=tf.nn.relu
-                    )
                     self.mu = tf.layers.dense(
                         actions, self.num_actions, activation=tf.nn.tanh
                     )
