@@ -187,7 +187,7 @@ class SwarmPolicyMonitor(PolicyMonitor):
 
             if total_reward > self.best_score:
                 self.best_score = total_reward
-                self._save_actions(total_reward, actions)
+                self._save_actions(total_reward, taken_actions)
 
             # Add summaries
             episode_summary = tf.Summary()
