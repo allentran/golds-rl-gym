@@ -172,7 +172,7 @@ class SwarmPolicyMonitor(PolicyMonitor):
                     action = self.get_action_from_policy(np.array(processed_state), history, self.state_processor.positions, sess)
                 else:
                     action = actions.get()
-                taken_actions.append(action)
+                taken_actions.append(action.tolist())
                 next_state, reward, done, _ = self.env.step(action)
                 processed_state = self.state_processor.process_state(next_state)
                 processed_state = np.array(SwarmRunner.get_local_states(processed_state, self.state_processor.positions))
