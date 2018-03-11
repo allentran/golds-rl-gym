@@ -5,6 +5,13 @@
 * Finance/trading environments
 
 ## Swarm environment
-Learning to disperse a swarm of locusts
+Learning to control a swarm of locusts (realistic physics)
 
-<img align="left" src="https://media.giphy.com/media/jnVo0Fe0cBqAJgS3Ja/giphy.gif">
+Random | After 24 hours
+------------ | -------------
+![Random](https://media.giphy.com/media/jnVo0Fe0cBqAJgS3Ja/giphy.gif) | ![Learned](https://media.giphy.com/media/EfmXvtNq3ZnjHTAY2Z/giphy.gif)
+
+To train
+```
+python scripts/train_paac_conv.py -d /gpu:0 --height=84 --clip_norm=1
+```
