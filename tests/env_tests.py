@@ -167,4 +167,4 @@ class SolowEnvTests(unittest.TestCase):
             capital_states.append(capital)
 
         self.assertFalse(done)
-        np.testing.assert_almost_equal(np.mean(capital_states), k_ss, decimal=1)
+        np.testing.assert_almost_equal(np.mean(capital_states), k_ss, decimal=0)
