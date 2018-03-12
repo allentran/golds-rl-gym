@@ -2,7 +2,131 @@ import numpy as np
 import tensorflow as tf
 
 from fed_gym.agents.a3c.estimators import GaussianPolicyEstimator, ValueEstimator, rnn_graph_lstm, DiscreteAndContPolicyEstimator, DiscretePolicyEstimator
-from fed_gym.agents.paac.policy_v_network import ConvPolicyVNetwork
+from fed_gym.agents.paac.policy_v_network import ConvPolicyVFieldNetwork, ConvSingleAgentPolicyNetwork
+
+
+class ConvSingleAgentTest(tf.test.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+
+        cls.batch_size = 16
+        cls.num_actions = 3
+        cls.input_size = 5
+
+        np.random.seed(1692)
+
+        cls.states = np.random.random((cls.batch_size, cls.input_size))
+        cls.advantage = np.random.random((cls.batch_size, )).astype('float32')
+        cls.discrete_actions = np.random.randint(0, cls.num_actions + 1, size=(cls.batch_size, 4)).astype('int32')
+        cls.cont_actions = np.random.uniform(size=(cls.batch_size, cls.num_actions))
+
+    def policy_predict_test(self):
+
+        num_actions = 3
+        n_agents = 10
+
+        estimator = ConvSingleAgentPolicyNetwork(
+            {
+                'name': 'test_conv_network',
+                'num_actions': num_actions,
+                'clip_norm': 40.,
+                'clip_norm_type': 'global',
+                'device': '/cpu:0',
+                'static_size': None,
+                'n_agents': n_agents,
+                'entropy_regularisation_strength': 0.,
+                'scale': 1.,
+                'height': 84,
+                'width': 84,
+                'channels': 3,
+                'filters': 5,
+                'conv_layers': 2
+            }
+        )
+        actions = np.random.uniform(size=(n_agents, num_actions))
+        state = np.random.uniform(
+            0., 1.,
+            (n_agents, estimator.height, estimator.width, estimator.channels),
+        )
+        with self.test_session() as sess:
+            sess.run(tf.global_variables_initializer())
+
+            feed_dict = {
+                estimator.states: state,
+                estimator.actions: actions,
+                estimator.advantages: np.ones((n_agents, )),
+                estimator.critic_target: np.zeros((n_agents, ))
+            }
+            pred = sess.run(
+                {
+                    'mus': estimator.mu,
+                    'sigmas': estimator.sigma,
+                    'policy_loss': estimator.policy_loss,
+                    'vs': estimator.vs,
+                    'critic_loss': estimator.critic_loss
+                },
+                feed_dict
+            )
+
+        self.assertEqual(pred['mus'].shape, (n_agents, self.num_actions))
+        self.assertEqual(pred['sigmas'].shape, (n_agents, self.num_actions))
+        self.assertEqual(pred['policy_loss'].shape, ())
+        self.assertEqual(pred['vs'].shape, (n_agents, ))
+        self.assertEqual(pred['critic_loss'].shape, (n_agents, ))
+
+    def train_test(self):
+
+        num_actions = 3
+        n_batch = 10
+        learning_rate = 0.02
+        epsilon = 0.1
+        decay = 0.99
+
+        estimator = ConvSingleAgentPolicyNetwork(
+            {
+                'name': 'test_conv_network',
+                'num_actions': num_actions,
+                'clip_norm': 40.,
+                'clip_norm_type': 'global',
+                'device': '/cpu:0',
+                'static_size': None,
+                'n_agents': n_batch,
+                'entropy_regularisation_strength': 0.,
+                'scale': 1.,
+                'height': 84,
+                'width': 84,
+                'channels': 3,
+                'filters': 5,
+                'conv_layers': 2
+            }
+        )
+        actions = np.random.uniform(size=(n_batch, num_actions))
+        state = np.random.uniform(
+            0., 1.,
+            (n_batch, estimator.height, estimator.width, estimator.channels),
+        )
+
+        optimizer_variable_names = 'OptimizerVariables'
+        optimizer = tf.train.RMSPropOptimizer(
+            learning_rate, decay=decay, epsilon=epsilon, name=optimizer_variable_names
+        )
+
+        grads_and_vars = [(g, v) for g, v in optimizer.compute_gradients(estimator.loss) if g is not None]
+        train_step = optimizer.apply_gradients(grads_and_vars)
+        with self.test_session() as sess:
+            sess.run(tf.global_variables_initializer())
+            for idx in range(100):
+                feed_dict = {
+                    estimator.states: state,
+                    estimator.actions: actions,
+                    estimator.advantages: np.ones((n_batch, )) / (idx + 1),
+                    estimator.critic_target: - 0.5 * np.random.uniform(size=(n_batch, ))
+                }
+                _, c_loss, p_loss = sess.run([train_step, estimator.critic_loss_mean, estimator.policy_loss], feed_dict)
+
+        self.assertAlmostEqual(0, c_loss, places=1)
+        self.assertAlmostEqual(0., p_loss, places=1)
 
 
 class ConvNetworkTest(tf.test.TestCase):
@@ -30,7 +154,7 @@ class ConvNetworkTest(tf.test.TestCase):
         num_actions = 3
         n_agents = 10
 
-        estimator = ConvPolicyVNetwork(
+        estimator = ConvPolicyVFieldNetwork(
             {
                 'name': 'test_conv_network',
                 'num_actions': num_actions,

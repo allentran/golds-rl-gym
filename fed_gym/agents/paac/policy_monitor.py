@@ -1,4 +1,5 @@
 import os
+import json
 import queue
 import time
 
@@ -6,7 +7,7 @@ import numpy as np
 import tensorflow as tf
 from gym.wrappers import Monitor
 
-from .policy_v_network import ConvPolicyVNetwork, FlatPolicyVNetwork
+from .policy_v_network import ConvSingleAgentPolicyNetwork, FlatPolicyVNetwork
 from.emulator_runner import SwarmRunner, SolowRunner
 from ..a3c.worker import make_copy_params_op
 
@@ -28,6 +29,7 @@ class PolicyMonitor(object):
         self.global_policy_net = global_policy_net
         self.summary_writer = summary_writer
         self.saver = saver
+        self.best_score = - np.inf
 
         self.checkpoint_path = os.path.abspath(os.path.join(summary_writer.get_logdir(), "../checkpoints/model"))
 
@@ -127,12 +129,25 @@ class SolowPolicyMonitor(PolicyMonitor):
 class SwarmPolicyMonitor(PolicyMonitor):
 
     def get_action_from_policy(self, processed_state, history, positions, sess):
-        raw_actions = super().get_action_from_policy(processed_state, history, positions, sess)
+        predictions = self.policy_net.predict(processed_state, sess)
+        mu, sigma = predictions['mu'], predictions['sigma']
+        raw_actions = mu + sigma * np.random.normal(size=mu.shape)
         return SwarmRunner.transform_actions_for_env(raw_actions)
 
     @staticmethod
     def _create_policy_estimator(conf):
-        return ConvPolicyVNetwork(conf)
+        return ConvSingleAgentPolicyNetwork(conf)
+
+    @staticmethod
+    def _save_actions(score, actions):
+        with open('swarm-eval.json', 'w') as f:
+            json.dump(
+                {
+                    'score': score,
+                    'actions': actions
+                },
+                f
+            )
 
     def eval_once(self, sess, max_sequence_length=5, actions: queue.Queue=None):
         with sess.as_default(), sess.graph.as_default():
@@ -151,11 +166,13 @@ class SwarmPolicyMonitor(PolicyMonitor):
             total_reward = 0.0
             episode_length = 0
             rewards = []
+            taken_actions = []
             while not done:
                 if not actions:
                     action = self.get_action_from_policy(np.array(processed_state), history, self.state_processor.positions, sess)
                 else:
                     action = actions.get()
+                taken_actions.append(action.tolist())
                 next_state, reward, done, _ = self.env.step(action)
                 processed_state = self.state_processor.process_state(next_state)
                 processed_state = np.array(SwarmRunner.get_local_states(processed_state, self.state_processor.positions))
@@ -167,6 +184,10 @@ class SwarmPolicyMonitor(PolicyMonitor):
                 rewards.append(reward)
 
                 histories = histories[-2 * max_sequence_length:]
+
+            if total_reward > self.best_score:
+                self.best_score = total_reward
+                self._save_actions(total_reward, taken_actions)
 
             # Add summaries
             episode_summary = tf.Summary()

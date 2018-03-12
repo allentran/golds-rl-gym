@@ -12,7 +12,7 @@ from fed_gym.agents.state_processors import SwarmStateProcessor
 from fed_gym.agents.paac import environment_creator
 from fed_gym.agents.paac.emulator_runner import SwarmRunner
 from fed_gym.agents.paac.paac import GridPAACLearner
-from fed_gym.agents.paac.policy_v_network import ConvPolicyVNetwork
+from fed_gym.agents.paac.policy_v_network import ConvSingleAgentPolicyNetwork
 
 logging.basicConfig(stream=sys.stdout, level=logging.INFO)
 
@@ -70,8 +70,8 @@ def get_network_and_environment_creator(args, random_seed=3):
         'device': args.device,
         'height': args.height,
         'width': args.height,
-        'channels': 2,
-        'filters': 3,
+        'channels': 3,
+        'filters': args.filters,
         'conv_layers': 2,
         'scale': args.scale,
         'clip_norm': args.clip_norm,
@@ -87,7 +87,7 @@ def get_network_and_environment_creator(args, random_seed=3):
         copied_network_conf = copy.copy(network_conf)
         copied_network_conf['name'] = name
         with tf.variable_scope("global"):
-            return ConvPolicyVNetwork(copied_network_conf)
+            return ConvSingleAgentPolicyNetwork(copied_network_conf)
 
     return network_creator, env_creator
 
@@ -111,7 +111,8 @@ def get_arg_parser():
     parser.add_argument('-df', '--debugging_folder', default='logs/', type=str, help="Folder where to save the debugging information.", dest="debugging_folder")
     parser.add_argument('-rs', '--random_start', default=True, type=bool_arg, help="Whether or not to start with 30 noops for each env. Default True", dest="random_start")
     parser.add_argument('--scale', default=1000., type=float)
-    parser.add_argument('--height', default=20, type=int)
+    parser.add_argument('--height', default=84, type=int)
+    parser.add_argument('--filters', default=32, type=int)
     parser.add_argument('--rnn-length', default=5, type=int)
     parser.add_argument('--static-size', default=2, type=int)
     parser.add_argument('--temporal-size', default=2, type=int)

@@ -2,7 +2,85 @@ from .networks import *
 from ..a3c.estimators import make_cell, rnn_graph_lstm
 
 
-class ConvPolicyVNetwork(ConvNetwork):
+class ConvSingleAgentPolicyNetwork(ConvSingleAgentNetwork):
+
+    def __init__(self, conf):
+        super().__init__(conf)
+        self.fc_hidden = 256
+
+        with tf.device(conf['device']):
+            with tf.name_scope(self.name):
+                with tf.variable_scope('process_input'):
+                    conv = tf.layers.Conv2D(
+                        32,
+                        kernel_size=8,
+                        strides=4,
+                        activation=tf.nn.relu
+                    )(self.states)
+                    conv = tf.layers.Conv2D(
+                        64,
+                        kernel_size=4,
+                        strides=2,
+                        activation=tf.nn.relu
+                    )(conv)
+                    conv = tf.layers.Conv2D(
+                        64,
+                        kernel_size=3,
+                        activation=tf.nn.relu
+                    )(conv)
+
+                    dense1 = tf.layers.Dense(2 * self.fc_hidden, activation=tf.nn.relu)
+                    dense2 = tf.layers.Dense(self.fc_hidden, activation=tf.nn.relu)
+
+                    flattened_state = tf.layers.flatten(conv)
+                    self.processed_state = dense2(dense1(flattened_state))
+
+                with tf.variable_scope('policy'):
+                    actions = tf.layers.dense(self.processed_state, 2 * self.fc_hidden, activation=tf.nn.relu)
+                    self.mu = tf.layers.dense(
+                        actions, self.num_actions, activation=tf.nn.tanh
+                    )
+                    self.sigma = tf.layers.dense(
+                        actions, self.num_actions, activation=tf.nn.sigmoid
+                    )
+
+                normal_dist = tf.distributions.Normal(self.mu, self.sigma)
+
+                log_l = normal_dist.log_prob(self.actions)
+                self.entropy = normal_dist.entropy()
+                if self.num_actions > 1:
+                    log_l = tf.reduce_sum(log_l, axis=-1)
+                    self.entropy = tf.reduce_sum(self.entropy, axis=-1)
+                self.policy_loss = - tf.reduce_mean(log_l * self.advantages + self.entropy_beta * self.entropy)
+
+                with tf.variable_scope('v_s'):
+                    vs = tf.layers.dense(self.processed_state, self.fc_hidden * 2, activation=tf.nn.relu)
+                    vs = tf.layers.dense(vs, self.fc_hidden, activation=tf.nn.relu)
+                    self.vs = - self.scale * tf.squeeze(tf.layers.dense(vs, 1, activation=tf.nn.softplus))
+
+                self.critic_loss = tf.squared_difference(self.vs, self.critic_target) / self.scale
+                self.critic_loss_mean = tf.reduce_mean(0.25 * self.critic_loss, name='mean_critic_loss')
+
+                # Loss scaling is used because the learning rate was initially runed tuned to be used with
+                # max_local_steps = 5 and summing over timesteps, which is now replaced with the mean.
+                self.loss = self.policy_loss + self.critic_loss_mean
+
+
+    def predict(self, states, session):
+        feed_dict = {
+            self.states: states,
+        }
+        return session.run(
+            {
+                'vs': self.vs,
+                'mu': self.mu,
+                'sigma': self.sigma,
+            },
+            feed_dict
+        )
+
+
+class ConvPolicyVFieldNetwork(ConvFieldNetwork):
     def __init__(self, conf):
         super().__init__(conf)
         self.fc_hidden = 32
