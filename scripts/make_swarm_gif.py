@@ -3,6 +3,8 @@ import json
 
 import gym
 import numpy as np
+import matplotlib
+matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
 import fed_gym.envs.multiagent
 from IPython import display
@@ -31,8 +33,8 @@ def update(idx):
 
     action = actions[t]
     next_state, reward, done, _ = env.step(action)
-    x = states[0]
-    xa = states[1]
+    x = next_state[0]
+    xa = next_state[1]
 
     make_plot(x, xa, colors) # plots a movie, turn off to speed up
     return x
