@@ -95,7 +95,7 @@ class SwarmEnv(gym.Env):
         DISTS_AGENTS = np.sum((xa[:, :, None] - x.T[None, :, :]) ** 2, axis=1) ** 0.5
         DISTS_LOCUSTS = np.sum((x[:, :, None] - x.T[None, :, :]) ** 2, axis=1) ** 0.5
 
-        dist_closest_locust = DISTS_AGENTS.min(axis=1).sum()
+        dist_closest_locust = (DISTS_AGENTS.min(axis=1) ** 2).sum()
 
         for j in range(N):
             # other swarm particles
