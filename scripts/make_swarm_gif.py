@@ -4,6 +4,7 @@ import json
 import gym
 import numpy as np
 import matplotlib
+import matplotlib.cm as cm
 matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
 import fed_gym.envs.multiagent
@@ -31,28 +32,23 @@ def hist_calc(x,Nsize):
 def update(idx):
     global x, xa
 
-    action = actions[t]
+    action = actions[idx]
     next_state, reward, done, _ = env.step(action)
     x = next_state[0]
     xa = next_state[1]
 
-    make_plot(x, xa, colors) # plots a movie, turn off to speed up
-    return x
+    make_plot(x, xa) # plots a movie, turn off to speed up
+    return reward
 
-def make_colors(N, Na):
-    colors=[]
-    for i in range(N):
-        colors.append('dodgerblue')
-    for i in range(Na):
-        colors.append('tomato')
-    return colors
 
-def make_plot(x, xa, colors):
+def make_plot(x, xa):
     plt.clf()
-    xt=np.concatenate((x,xa),axis=0)
-    plt.scatter(xt[:, 0], xt[:, 1],c=colors)
-    plt.ylim((0, 5))
-    # plt.yticks([])
+    plt.scatter(x[:, 0], x[:, 1], c=np.arange(len(x)), cmap='Reds')
+    plt.scatter(xa[:, 0], xa[:, 1], c='dodgerblue')
+    plt.ylim((0, 4))
+    plt.xlim((0, 9))
+    plt.yticks([])
+    plt.xticks([])
     display.clear_output(wait=True)
     display.display(plt.gcf())
 
@@ -73,17 +69,16 @@ if __name__ == '__main__':
     states = env.reset()
     x = states[0]
     xa = states[1]
-    colors = make_colors(80, 10)
     plt.style.use('ggplot')
     fig, ax = plt.subplots()
 
-    done = False
-    t = 0
-    rewards = []
-    for t in range(len(actions)):
-        update(t)
+    # t = 0
+    # rewards = []
+    # for t in range(len(actions)):
+    #     rewards.append(update(t))
+    # print(np.mean(rewards))
 
-    anim = FuncAnimation(fig, update, frames=np.arange(0, 128), interval=200)
-    anim.save('line.gif', dpi=80, writer='imagemagick')
+    anim = FuncAnimation(fig, update, frames=np.arange(0, 128), interval=50)
+    anim.save('line-random.gif', dpi=80, writer='imagemagick')
 
 
