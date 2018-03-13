@@ -23,15 +23,14 @@ class SwarmStateProcessor(StateProcessor):
         self.HEIGHT = 3.
 
     def _get_bounding_box(self, x):
-        mean_x = np.median(x, axis=0)[0]
+        mean_x = np.mean(x, axis=0)[0]
         return [[mean_x - self.WIDTH / 2., mean_x + self.WIDTH / 2.], [0, 2 * self.HEIGHT]]
 
     def process_state(self, state):
-        x, xa = state[0], state[1]
-        bounding_box = self._get_bounding_box(xa)
-        xa_grid, x_edges, y_edges = np.histogram2d(xa[:, 0], xa[:, 1], self.grid_size, bounding_box)
-        x_grid, _, _ = np.histogram2d(x[:, 0], x[:, 1], bins=[x_edges, y_edges])
-        grid = np.stack([x_grid / len(x), xa_grid / len(xa)], axis=-1)
+        bounding_box = self._get_bounding_box(np.vstack([state[0], state[1]]))
+        x_grid, x_edges, y_edges = np.histogram2d(state[0][:, 0], state[0][:, 1], self.grid_size, bounding_box)
+        xa_grid, xa_x_edges, xa_y_edges = np.histogram2d(state[1][:, 0], state[1][:, 1], bins=[x_edges, y_edges])
+        grid = np.stack([x_grid / len(state[0]), xa_grid / len(state[1])], axis=-1)
 
         xa_x_idx = np.digitize(state[1][:, 0], x_edges)
         xa_x_idx[xa_x_idx >= self.grid_size] = self.grid_size - 1
