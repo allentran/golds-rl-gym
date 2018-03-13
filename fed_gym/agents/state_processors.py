@@ -24,7 +24,7 @@ class SwarmStateProcessor(StateProcessor):
 
     def _get_bounding_box(self, x):
         mean_x = np.median(x, axis=0)[0]
-        return [[mean_x - self.WIDTH / 2., mean_x + self.WIDTH / 2.], [0, self.HEIGHT]]
+        return [[mean_x - self.WIDTH / 2., mean_x + self.WIDTH / 2.], [0, 2 * self.HEIGHT]]
 
     def process_state(self, state):
         x, xa = state[0], state[1]

@@ -112,5 +112,5 @@ class SwarmEnv(gym.Env):
             v[j][0] += v_0.sum()
             v[j][1] += v_1.sum()
         energy = (v ** 2).sum(axis=1).mean()
-        return v, -energy - 0.1 * dist_closest_locust
+        return v, -energy #- 0.1 * dist_closest_locust
 
