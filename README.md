@@ -15,3 +15,5 @@ To train
 ```
 python scripts/train_paac_conv.py -d /gpu:0 --height=84 --clip_norm=1
 ```
+### Acknowledgements
+Bibs and bobs borrowed from https://github.com/Alfredvc/paac and https://github.com/dennybritz/reinforcement-learning/
