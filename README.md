@@ -9,7 +9,7 @@ Learning to control a swarm of locusts (realistic physics)
 
 Random | After 24 hours
 ------------ | -------------
-![Random](https://media.giphy.com/media/jnVo0Fe0cBqAJgS3Ja/giphy.gif) | ![Learned](https://media.giphy.com/media/EfmXvtNq3ZnjHTAY2Z/giphy.gif)
+![Random](https://media.giphy.com/media/xtpkwoUKvljrcvMGqJ/giphy.gif) | ![Learned](https://media.giphy.com/media/g0w05sZFV8xhve9rzE/giphy.gif)
 
 To train
 ```
