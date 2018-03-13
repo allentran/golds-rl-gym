@@ -5,7 +5,7 @@
 * Finance/trading environments
 
 ## Swarm environment
-Learning to control a swarm of locusts (realistic physics)
+Learning to stop a swarm of locusts from "rolling"
 
 Random | After 24 hours
 ------------ | -------------
