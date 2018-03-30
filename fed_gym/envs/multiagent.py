@@ -91,20 +91,26 @@ class SwarmEnv(gym.Env):
         v = np.zeros((N,2))
         v[:, 0] = U
         v[:, 1] = G
+
+        DISTS_AGENTS = np.sum((xa[:, :, None] - x.T[None, :, :]) ** 2, axis=1) ** 0.5
+        DISTS_LOCUSTS = np.sum((x[:, :, None] - x.T[None, :, :]) ** 2, axis=1) ** 0.5
+
+        dist_closest_locust = (DISTS_AGENTS.min(axis=1) ** 2).sum()
+
         for j in range(N):
             # other swarm particles
-            dists = ((x[:, 0] - x[j][0]) ** 2 + (x[:, 1] - x[j][1]) ** 2) ** 0.5
+            dists = DISTS_LOCUSTS[:, j]
             v_0 = SwarmEnv.s(dists, F, L) * (x[:, 0] - x[j][0]) / (dists + 0.000001)
             v_1 = SwarmEnv.s(dists, F, L) * (x[:, 1] - x[j][1]) / (dists + 0.000001)
             v[j][0] += v_0.sum()
             v[j][1] += v_1.sum()
 
             # agent interactions
-            dists = ((xa[:, 0] - x[j][0]) ** 2 + (xa[:, 1] - x[j][1]) ** 2) ** 0.5
+            dists = DISTS_AGENTS[:, j]
             v_0 = SwarmEnv.s(dists, F, L) * (xa[:, 0] - x[j][0]) / (dists + 0.000001)
             v_1 = SwarmEnv.s(dists, F, L) * (xa[:, 1] - x[j][1]) / (dists + 0.000001)
             v[j][0] += v_0.sum()
             v[j][1] += v_1.sum()
         energy = (v ** 2).sum(axis=1).mean()
-        return v, -energy
+        return v, -energy #- 0.1 * dist_closest_locust
 

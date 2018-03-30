@@ -30,8 +30,7 @@ class ActorLearner(Process):
 
         self.learning_rate = tf.placeholder(tf.float32, shape=[])
         optimizer_variable_names = 'OptimizerVariables'
-        self.optimizer = tf.train.RMSPropOptimizer(self.learning_rate, decay=args.alpha, epsilon=args.e,
-                                                   name=optimizer_variable_names)
+        self.optimizer = tf.train.AdamOptimizer(self.learning_rate, name=optimizer_variable_names)
 
         self.emulators = np.asarray([environment_creator.create_environment() for _ in range(self.emulator_counts)])
         self.max_global_steps = args.max_global_steps
