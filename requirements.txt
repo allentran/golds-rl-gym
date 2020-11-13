@@ -30,7 +30,7 @@ scandir==1.6
 scipy==1.0.0
 simplegeneric==0.8.1
 six==1.11.0
-tensorflow==1.4.1
+tensorflow==2.3.1
 traitlets==4.3.2
 urllib3==1.22
 wcwidth==0.1.7
