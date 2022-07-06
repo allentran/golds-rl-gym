@@ -4,7 +4,7 @@ chardet==3.0.4
 enum34==1.1.6
 future==0.16.0
 gym==0.9.4
-html5lib==0.9999999
+html5lib==0.999999999
 idna==2.6
 ipython==5.5.0
 ipython-genutils==0.2.0
